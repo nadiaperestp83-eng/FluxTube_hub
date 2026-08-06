@@ -1,205 +1,551 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fluxtube/application/application.dart';
+import 'package:fluxtube/core/constants.dart';
+import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/presentation/home/widgets/personalized_feed_section.dart';
+import 'package:fluxtube/presentation/home/widgets/widgets.dart';
+import 'package:fluxtube/presentation/trending/widgets/invidious/trending_videos_section.dart';
+import 'package:fluxtube/presentation/trending/widgets/newpipe/trending_videos_section.dart';
+import 'package:fluxtube/presentation/trending/widgets/piped/trending_videos_section.dart';
+import 'package:fluxtube/widgets/widgets.dart';
 
-import 'data/watch_now_repository.dart';
-import 'models/watch_now_video.dart';
-import 'theme/watch_now_theme.dart';
-import 'widgets/widgets.dart';
-
-/// Tela "Watch Now" — substitui a Home atual do FluxTube.
+/// Tela "Watch Now" — mesma lógica de dados real do ScreenHome original
+/// (TrendingBloc / SubscribeBloc / SettingsBloc), só com um cabeçalho novo
+/// (título + pílulas de categoria) no lugar do HomeAppBar.
 ///
-/// COMO INTEGRAR NO APP:
-/// 1. Copie a pasta `watch_now/` para dentro de `lib/features/` (ou onde
-///    preferir) no teu projeto.
-/// 2. No arquivo que atualmente monta a aba Home (ex: `home_screen.dart`
-///    ou o `TabBarView`/`BottomNavigationBar` principal), troque o widget
-///    da Home por `WatchNowScreen(repository: SEU_REPOSITORIO_AQUI)`.
-/// 3. Por enquanto, `MockWatchNowRepository` já deixa a tela 100%
-///    funcional com dados fake — dá pra rodar e ver o layout sem
-///    depender de rede nem mexer em mais nada.
-/// 4. Quando você me mandar o arquivo do teu serviço real (o que hoje
-///    busca trending/subscrições — NewPipeExtractorService, PipedService
-///    etc.), eu escrevo `FluxTubeWatchNowRepository implements
-///    WatchNowRepository` chamando ele de verdade, sem tocar em nenhum
-///    outro arquivo do app.
-class WatchNowScreen extends StatefulWidget {
-  final WatchNowRepository repository;
-  final String? userAvatarUrl;
-
-  const WatchNowScreen({
-    super.key,
-    this.repository = const _DefaultRepo(),
-    this.userAvatarUrl,
-  });
+/// As pílulas de categoria ainda são apenas visuais nesta versão — não
+/// filtram os dados. Toda a lógica de feed/trending/personalized abaixo é
+/// idêntica à da Home original, então os vídeos mostrados são 100% reais.
+class ScreenWatchNow extends StatefulWidget {
+  const ScreenWatchNow({super.key});
 
   @override
-  State<WatchNowScreen> createState() => _WatchNowScreenState();
+  State<ScreenWatchNow> createState() => _ScreenWatchNowState();
 }
 
-// Permite usar `const` no construtor mesmo com o mock (que não é const).
-class _DefaultRepo implements WatchNowRepository {
-  const _DefaultRepo();
-  static final _delegate = MockWatchNowRepository();
-
-  @override
-  Future<WatchNowVideo?> fetchUpNext() => _delegate.fetchUpNext();
-  @override
-  Future<List<WatchNowVideo>> fetchWhatToWatch() => _delegate.fetchWhatToWatch();
-  @override
-  Future<List<WatchNowVideo>> fetchTrending() => _delegate.fetchTrending();
-  @override
-  Future<List<WatchNowCategoryItem>> fetchCategories() => _delegate.fetchCategories();
-}
-
-class _WatchNowScreenState extends State<WatchNowScreen> {
-  late Future<_WatchNowData> _future;
-  WatchNowCategory _selectedCategory = WatchNowCategory.all;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = _load();
-  }
-
-  Future<_WatchNowData> _load() async {
-    final results = await Future.wait([
-      widget.repository.fetchUpNext(),
-      widget.repository.fetchWhatToWatch(),
-      widget.repository.fetchTrending(),
-      widget.repository.fetchCategories(),
-    ]);
-    return _WatchNowData(
-      upNext: results[0] as WatchNowVideo?,
-      whatToWatch: results[1] as List<WatchNowVideo>,
-      trending: results[2] as List<WatchNowVideo>,
-      categories: results[3] as List<WatchNowCategoryItem>,
-    );
-  }
-
-  Future<void> _refresh() async {
-    final next = _load();
-    setState(() => _future = next);
-    await next;
-  }
+class _ScreenWatchNowState extends State<ScreenWatchNow> {
+  int _selectedChip = 0;
+  static const _chipLabels = ['Para você', 'Vídeos', 'Séries', 'Esportes'];
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: WatchNowColors.background,
-      body: SafeArea(
-        child: FutureBuilder<_WatchNowData>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return _ErrorState(onRetry: _refresh);
-            }
-            final data = snapshot.data!;
-            return RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
+    final trendingBloc = BlocProvider.of<TrendingBloc>(context);
+    final locals = S.of(context);
+
+    return BlocBuilder<SettingsBloc, SettingsState>(
+      buildWhen: (previous, current) =>
+          previous.ytService != current.ytService ||
+          previous.defaultRegion != current.defaultRegion ||
+          previous.homeFeedMode != current.homeFeedMode,
+      builder: (context, settingsState) {
+        return SafeArea(
+          child: NestedScrollView(
+            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+              SliverToBoxAdapter(child: _buildHeader(context)),
+              SliverToBoxAdapter(child: _buildChips()),
+            ],
+            body: BlocBuilder<SubscribeBloc, SubscribeState>(
+              buildWhen: (previous, current) =>
+                  previous.subscribedChannels.length !=
+                  current.subscribedChannels.length,
+              builder: (context, subscribeState) {
+                if (subscribeState.subscribedChannels.isNotEmpty &&
+                    subscribeState.oldList.length !=
+                        subscribeState.subscribedChannels.length) {
+                  log("oldList: ${subscribeState.oldList.length} & subscribedChannels: ${subscribeState.subscribedChannels.length}");
+                  if (settingsState.ytService != YouTubeServices.newpipe.name) {
+                    trendingBloc.add(GetForcedHomeFeedData(
+                        channels: subscribeState.subscribedChannels));
+                  }
+                  BlocProvider.of<SubscribeBloc>(context).add(
+                      SubscribeEvent.updateSubscribeOldList(
+                          subscribedChannels:
+                              subscribeState.subscribedChannels));
+                }
+                return BlocBuilder<TrendingBloc, TrendingState>(
+                  buildWhen: (previous, current) {
+                    return previous.fetchTrendingStatus !=
+                            current.fetchTrendingStatus ||
+                        previous.fetchInvidiousTrendingStatus !=
+                            current.fetchInvidiousTrendingStatus ||
+                        previous.fetchNewPipeTrendingStatus !=
+                            current.fetchNewPipeTrendingStatus ||
+                        previous.fetchFeedStatus != current.fetchFeedStatus ||
+                        previous.fetchNewPipeFeedStatus !=
+                            current.fetchNewPipeFeedStatus ||
+                        previous.newPipeFeedResult !=
+                            current.newPipeFeedResult ||
+                        previous.fetchPersonalizedFeedStatus !=
+                            current.fetchPersonalizedFeedStatus ||
+                        previous.personalizedFeedResult !=
+                            current.personalizedFeedResult ||
+                        previous.personalizedFeedDisplayCount !=
+                            current.personalizedFeedDisplayCount ||
+                        previous.isLoadingMorePersonalizedFeed !=
+                            current.isLoadingMorePersonalizedFeed ||
+                        previous.hasMorePersonalizedContent !=
+                            current.hasMorePersonalizedContent ||
+                        previous.feedDisplayCount != current.feedDisplayCount ||
+                        previous.isLoadingMoreFeed !=
+                            current.isLoadingMoreFeed ||
+                        previous.newPipeFeedDisplayCount !=
+                            current.newPipeFeedDisplayCount ||
+                        previous.isLoadingMoreNewPipeFeed !=
+                            current.isLoadingMoreNewPipeFeed ||
+                        previous.trendingDisplayCount !=
+                            current.trendingDisplayCount ||
+                        previous.isLoadingMoreTrending !=
+                            current.isLoadingMoreTrending ||
+                        previous.newPipeTrendingDisplayCount !=
+                            current.newPipeTrendingDisplayCount ||
+                        previous.isLoadingMoreNewPipeTrending !=
+                            current.isLoadingMoreNewPipeTrending ||
+                        previous.invidiousTrendingDisplayCount !=
+                            current.invidiousTrendingDisplayCount ||
+                        previous.isLoadingMoreInvidiousTrending !=
+                            current.isLoadingMoreInvidiousTrending;
+                  },
+                  builder: (context, trendingState) {
+                    if (settingsState.ytService ==
+                        YouTubeServices.newpipe.name) {
+                      return _buildNewPipeTrendingOrFeedSection(
+                        trendingState,
+                        locals,
+                        context,
+                        subscribeState,
+                        trendingBloc,
+                        settingsState,
+                      );
+                    } else if (settingsState.ytService ==
+                        YouTubeServices.invidious.name) {
+                      return _buildInvidiousTrendingOrFeedSection(
+                        trendingState,
+                        locals,
+                        context,
+                        subscribeState,
+                        trendingBloc,
+                        settingsState,
+                      );
+                    } else {
+                      return _buildPipedTrendingOrFeedSection(
+                        trendingState,
+                        locals,
+                        context,
+                        subscribeState,
+                        trendingBloc,
+                        settingsState,
+                      );
+                    }
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Watch Now',
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
                 ),
-                children: [
-                  _Header(avatarUrl: widget.userAvatarUrl),
-                  const SizedBox(height: 16),
-                  CategoryChips(
-                    categories: data.categories,
-                    selected: _selectedCategory,
-                    onSelected: (item) =>
-                        setState(() => _selectedCategory = item.type),
-                  ),
-                  const SizedBox(height: 20),
-                  if (data.upNext != null) ...[
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: FeaturedCard(video: data.upNext!),
-                    ),
-                    const SizedBox(height: 28),
-                  ],
-                  HorizontalSection(
-                    title: 'What to Watch',
-                    videos: data.whatToWatch,
-                    onSeeAll: () {},
-                  ),
-                  const SizedBox(height: 28),
-                  HorizontalSection(
-                    title: 'Trending',
-                    videos: data.trending,
-                    onSeeAll: () {},
-                  ),
-                  const SizedBox(height: 24),
-                ],
+          ),
+          const CircleAvatar(
+            radius: 18,
+            child: Icon(Icons.person, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChips() {
+    return SizedBox(
+      height: 44,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _chipLabels.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final selected = index == _selectedChip;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedChip = index),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: BoxDecoration(
+                color: selected
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
               ),
-            );
-          },
+              alignment: Alignment.center,
+              child: Text(
+                _chipLabels[index],
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: selected
+                      ? Theme.of(context).colorScheme.onPrimary
+                      : Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildPipedTrendingOrFeedSection(
+      TrendingState trendingState,
+      S locals,
+      BuildContext context,
+      SubscribeState subscribeState,
+      TrendingBloc trendingBloc,
+      SettingsState settingsState) {
+    final homeFeedMode = settingsState.homeFeedMode;
+
+    if (trendingState.trendingResult.isEmpty &&
+        !(trendingState.fetchTrendingStatus == ApiStatus.error)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        trendingBloc.add(TrendingEvent.getTrendingData(
+            serviceType: settingsState.ytService,
+            region: settingsState.defaultRegion));
+      });
+    }
+
+    if (trendingState.fetchTrendingStatus == ApiStatus.loading ||
+        trendingState.fetchTrendingStatus == ApiStatus.initial) {
+      return _buildLoadingList();
+    }
+
+    if (homeFeedMode == HomeFeedMode.trendingOnly.name) {
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        locals,
+        settingsState,
+      );
+    }
+
+    if (homeFeedMode == HomeFeedMode.feedOnly.name) {
+      if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+        return _buildLoadingList();
+      }
+      if (trendingState.feedResult.isEmpty) {
+        return _buildEmptySubscriptionState(context, locals);
+      }
+      return _buildFeedSection(
+        trendingState,
+        locals,
+        subscribeState,
+        trendingBloc,
+      );
+    }
+
+    if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+      return _buildLoadingList();
+    }
+
+    if (trendingState.feedResult.isEmpty ||
+        trendingState.fetchFeedStatus == ApiStatus.error) {
+      log("Feed Error or empty - showing trending");
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        locals,
+        settingsState,
+      );
+    }
+
+    return _buildFeedSection(
+      trendingState,
+      locals,
+      subscribeState,
+      trendingBloc,
+    );
+  }
+
+  Widget _buildNewPipeTrendingOrFeedSection(
+    TrendingState trendingState,
+    S locals,
+    BuildContext context,
+    SubscribeState subscribeState,
+    TrendingBloc trendingBloc,
+    SettingsState settingsState,
+  ) {
+    if (trendingState.personalizedFeedResult.isEmpty &&
+        trendingState.fetchPersonalizedFeedStatus == ApiStatus.initial) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        trendingBloc.add(TrendingEvent.getPersonalizedFeed(
+          profileName: settingsState.currentProfile,
+          serviceType: settingsState.ytService,
+        ));
+      });
+    }
+
+    if (trendingState.fetchPersonalizedFeedStatus == ApiStatus.loading ||
+        trendingState.fetchPersonalizedFeedStatus == ApiStatus.initial) {
+      return _buildLoadingList();
+    }
+
+    if (trendingState.fetchPersonalizedFeedStatus == ApiStatus.error ||
+        (trendingState.personalizedFeedResult.isEmpty &&
+            trendingState.fetchPersonalizedFeedStatus == ApiStatus.loaded)) {
+      log("Personalized feed error/empty - falling back to trending");
+      if (trendingState.newPipeTrendingResult.isEmpty &&
+          trendingState.fetchNewPipeTrendingStatus != ApiStatus.loading) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          trendingBloc.add(TrendingEvent.getTrendingData(
+              serviceType: settingsState.ytService,
+              region: settingsState.defaultRegion));
+        });
+      }
+      return RefreshIndicator(
+        onRefresh: () async {
+          trendingBloc.add(TrendingEvent.getForcedPersonalizedFeed(
+            profileName: settingsState.currentProfile,
+            serviceType: settingsState.ytService,
+          ));
+        },
+        child: _buildErrorOrTrendingSection(
+          context,
+          trendingState,
+          locals,
+          settingsState,
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        trendingBloc.add(TrendingEvent.getForcedPersonalizedFeed(
+          profileName: settingsState.currentProfile,
+          serviceType: settingsState.ytService,
+        ));
+      },
+      child: PersonalizedFeedSection(
+        trendingState: trendingState,
+        locals: locals,
+        settingsState: settingsState,
+      ),
+    );
+  }
+
+  Widget _buildInvidiousTrendingOrFeedSection(
+    TrendingState trendingState,
+    S locals,
+    BuildContext context,
+    SubscribeState subscribeState,
+    TrendingBloc trendingBloc,
+    SettingsState settingsState,
+  ) {
+    final homeFeedMode = settingsState.homeFeedMode;
+
+    if (trendingState.invidiousTrendingResult.isEmpty &&
+        !(trendingState.fetchInvidiousTrendingStatus == ApiStatus.error)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        trendingBloc.add(TrendingEvent.getTrendingData(
+            serviceType: settingsState.ytService,
+            region: settingsState.defaultRegion));
+      });
+    }
+
+    if (trendingState.fetchInvidiousTrendingStatus == ApiStatus.loading ||
+        trendingState.fetchInvidiousTrendingStatus == ApiStatus.initial) {
+      return _buildLoadingList();
+    }
+
+    if (homeFeedMode == HomeFeedMode.trendingOnly.name) {
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        locals,
+        settingsState,
+      );
+    }
+
+    if (homeFeedMode == HomeFeedMode.feedOnly.name) {
+      if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+        return _buildLoadingList();
+      }
+      if (trendingState.feedResult.isEmpty) {
+        return _buildEmptySubscriptionState(context, locals);
+      }
+      return _buildFeedSection(
+        trendingState,
+        locals,
+        subscribeState,
+        trendingBloc,
+      );
+    }
+
+    if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+      return _buildLoadingList();
+    }
+
+    if (trendingState.feedResult.isEmpty ||
+        trendingState.fetchFeedStatus == ApiStatus.error) {
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        locals,
+        settingsState,
+      );
+    }
+
+    return _buildFeedSection(
+      trendingState,
+      locals,
+      subscribeState,
+      trendingBloc,
+    );
+  }
+
+  Widget _buildLoadingList() {
+    return ListView.separated(
+      separatorBuilder: (context, index) => kHeightBox10,
+      itemBuilder: (context, index) {
+        return const ShimmerHomeVideoInfoCard();
+      },
+      itemCount: 10,
+    );
+  }
+
+  Widget _buildErrorOrTrendingSection(
+    BuildContext context,
+    TrendingState trendingState,
+    S locals,
+    SettingsState settingsState,
+  ) {
+    if (settingsState.ytService == YouTubeServices.newpipe.name) {
+      if (trendingState.fetchNewPipeTrendingStatus == ApiStatus.error ||
+          trendingState.newPipeTrendingResult.isEmpty) {
+        return ErrorRetryWidget(
+          lottie: 'assets/dog.zip',
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
+        );
+      }
+    } else if (settingsState.ytService == YouTubeServices.invidious.name) {
+      if (trendingState.fetchInvidiousTrendingStatus == ApiStatus.error ||
+          trendingState.invidiousTrendingResult.isEmpty) {
+        return ErrorRetryWidget(
+          lottie: 'assets/dog.zip',
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
+        );
+      }
+    } else {
+      if (trendingState.fetchTrendingStatus == ApiStatus.error ||
+          trendingState.trendingResult.isEmpty) {
+        return ErrorRetryWidget(
+          lottie: 'assets/dog.zip',
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
+        );
+      }
+    }
+
+    if (settingsState.ytService == YouTubeServices.newpipe.name) {
+      return NewPipeTrendingVideosSection(
+        locals: locals,
+        state: trendingState,
+      );
+    } else if (settingsState.ytService == YouTubeServices.invidious.name) {
+      return InvidiousTrendingVideosSection(
+        locals: locals,
+        state: trendingState,
+      );
+    }
+
+    return TrendingVideosSection(
+      locals: locals,
+      state: trendingState,
+    );
+  }
+
+  Widget _buildFeedSection(
+    TrendingState trendingState,
+    S locals,
+    SubscribeState subscribeState,
+    TrendingBloc trendingBloc,
+  ) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        trendingBloc.add(TrendingEvent.getForcedHomeFeedData(
+          channels: subscribeState.subscribedChannels,
+        ));
+      },
+      child: FeedVideoSection(
+        trendingState: trendingState,
+        locals: locals,
+        subscribeState: subscribeState,
+      ),
+    );
+  }
+
+  Widget _buildEmptySubscriptionState(BuildContext context, S locals) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.subscriptions_outlined,
+              size: 64,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.5),
+            ),
+            kHeightBox20,
+            Text(
+              locals.noSubscriptions,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            kHeightBox10,
+            Text(
+              locals.noSubscriptionsHint,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );
   }
-}
-
-class _Header extends StatelessWidget {
-  final String? avatarUrl;
-  const _Header({this.avatarUrl});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text('Watch Now', style: WatchNowTextStyles.title),
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: WatchNowColors.surface,
-            backgroundImage:
-                avatarUrl != null ? NetworkImage(avatarUrl!) : null,
-            child: avatarUrl == null
-                ? const Icon(Icons.person, color: WatchNowColors.textSecondary)
-                : null,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final VoidCallback onRetry;
-  const _ErrorState({required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text(
-            'Não foi possível carregar o conteúdo.',
-            style: TextStyle(color: WatchNowColors.textSecondary),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: onRetry, child: const Text('Tentar de novo')),
-        ],
-      ),
-    );
-  }
-}
-
-class _WatchNowData {
-  final WatchNowVideo? upNext;
-  final List<WatchNowVideo> whatToWatch;
-  final List<WatchNowVideo> trending;
-  final List<WatchNowCategoryItem> categories;
-
-  _WatchNowData({
-    required this.upNext,
-    required this.whatToWatch,
-    required this.trending,
-    required this.categories,
-  });
 }
