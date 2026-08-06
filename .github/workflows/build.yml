@@ -1,10 +1,11 @@
 name: Android Release Build
 
-# Roda só quando você criar uma tag no padrão v* (ex: v1.0.0, v0.9.3)
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - "main"
+      - "master"
+  workflow_dispatch:
 
 jobs:
   build-android:
@@ -36,10 +37,6 @@ jobs:
             flutter pub run build_runner build --delete-conflicting-outputs
           fi
 
-      # Sem Play Store: usa a assinatura padrão do Flutter/Android (debug
-      # keystore local do runner). Não precisa de secrets nem de keystore
-      # próprio. Se o android/app/build.gradle já tiver um signingConfig
-      # "release" apontando pra outro keystore, ajuste esse passo.
       - name: Build release APK (arm64-v8a apenas — aparelhos 64-bit modernos)
         run: |
           flutter build apk --release \
@@ -57,11 +54,3 @@ jobs:
         with:
           name: fluxtube-arm64-release
           path: ${{ steps.apk.outputs.path }}
-
-      - name: Create GitHub Release with APK
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ${{ steps.apk.outputs.path }}
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
