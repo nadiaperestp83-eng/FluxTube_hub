@@ -5,7 +5,6 @@ on:
     branches:
       - "main"
       - "master"
-    # Opcional: Garante que só roda se houver alteração em arquivos do projeto
     paths:
       - "lib/**"
       - "pubspec.yaml"
@@ -29,8 +28,8 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version-file: pubspec.yaml
-          channel: "stable"
+          flutter-version: '3.19.6' # Versão fixa e estável do Flutter para evitar erros de leitura
+          channel: 'stable'
           cache: true
 
       - name: Install dependencies
@@ -58,5 +57,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fluxtube-arm64-release
-          path: ${{ steps.apk.outputs.path }}
-# trigger-refresh
+          path: ${{ steps.apk.outputs.path }}"
