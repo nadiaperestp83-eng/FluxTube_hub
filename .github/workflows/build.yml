@@ -5,6 +5,11 @@ on:
     branches:
       - "main"
       - "master"
+    # Opcional: Garante que só roda se houver alteração em arquivos do projeto
+    paths:
+      - "lib/**"
+      - "pubspec.yaml"
+      - ".github/workflows/build.yml"
   workflow_dispatch:
 
 jobs:
