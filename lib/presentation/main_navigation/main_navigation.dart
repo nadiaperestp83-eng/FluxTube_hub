@@ -12,11 +12,11 @@ import 'package:fluxtube/core/services/pip_service.dart';
 import 'package:fluxtube/generated/l10n.dart';
 
 import '../download/screen_downloads.dart';
-import '../home/screen_home.dart';
 import '../saved/screen_saved.dart';
 import '../settings/screen_settings.dart';
 import '../subscriptions/screen_subscriptions.dart';
 import '../trending/screen_trending.dart';
+import '../watch_now/screen_watch_now.dart';
 
 ValueNotifier<int> indexChangeNotifier = ValueNotifier(0);
 
@@ -73,7 +73,7 @@ class MainNavigationState extends State<MainNavigation> {
   List<Widget> _getPages(bool showTrending) {
     if (showTrending) {
       return [
-        _cachedPage('home', const ScreenHome()),
+        _cachedPage('home', const ScreenWatchNow()),
         _cachedPage('trending', const ScreenTrending()),
         _cachedPage('subscriptions', const ScreenSubscriptions()),
         _cachedPage('saved', const ScreenSaved()),
@@ -82,7 +82,7 @@ class MainNavigationState extends State<MainNavigation> {
       ];
     } else {
       return [
-        _cachedPage('home', const ScreenHome()),
+        _cachedPage('home', const ScreenWatchNow()),
         _cachedPage('subscriptions', const ScreenSubscriptions()),
         _cachedPage('saved', const ScreenSaved()),
         _cachedPage('downloads', const ScreenDownloads()),
