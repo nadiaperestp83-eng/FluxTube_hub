@@ -51,11 +51,6 @@ android {
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
         multiDexEnabled true
-    }   
-    signingConfigs {
-        release {
-            // Configuração de keystore removida para permitir builds limpos sem chave obrigatória
-        }
     }
 
     buildFeatures {
@@ -72,6 +67,14 @@ android {
 
     buildTypes {
         release {
+            // Sem publicação na Play Store: assina o release com o
+            // signingConfigs.debug embutido do próprio AGP (keystore
+            // auto-gerado pelo SDK, keyAlias androiddebugkey, senha
+            // "android"). Não precisa de keystore próprio nem secrets
+            // no CI. Antes o release não tinha NENHUM signingConfig
+            // aplicado, então o APK saía sem assinatura — daí o
+            // "pacote inválido" ao instalar.
+            signingConfig signingConfigs.debug
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
