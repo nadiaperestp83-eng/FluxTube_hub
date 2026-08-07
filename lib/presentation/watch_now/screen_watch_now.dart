@@ -6,21 +6,17 @@ import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/operations/math_operations.dart';
+import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
-import 'package:fluxtube/presentation/home/widgets/personalized_feed_section.dart';
-import 'package:fluxtube/presentation/home/widgets/widgets.dart';
-import 'package:fluxtube/presentation/trending/widgets/invidious/trending_videos_section.dart';
-import 'package:fluxtube/presentation/trending/widgets/newpipe/trending_videos_section.dart';
-import 'package:fluxtube/presentation/trending/widgets/piped/trending_videos_section.dart';
+import 'package:fluxtube/widgets/thumbnail_image.dart';
 import 'package:fluxtube/widgets/widgets.dart';
+import 'package:go_router/go_router.dart';
 
 /// Tela "Watch Now" — mesma lógica de dados real do ScreenHome original
-/// (TrendingBloc / SubscribeBloc / SettingsBloc), só com um cabeçalho novo
-/// (título + pílulas de categoria) no lugar do HomeAppBar.
-///
-/// As pílulas de categoria ainda são apenas visuais nesta versão — não
-/// filtram os dados. Toda a lógica de feed/trending/personalized abaixo é
-/// idêntica à da Home original, então os vídeos mostrados são 100% reais.
+/// (TrendingBloc / SubscribeBloc / SettingsBloc), com layout estilo Apple TV:
+/// card grande "Up Next" + fileira horizontal "What to Watch", em vez de
+/// lista vertical tipo feed.
 class ScreenWatchNow extends StatefulWidget {
   const ScreenWatchNow({super.key});
 
@@ -150,9 +146,10 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
     );
   }
 
-  /// Barra superior escura (título + avatar) + pílulas de categoria em
-  /// vermelho — tudo no mesmo bloco preto, em lista horizontal com rolagem
-  /// (sem cores pastel / estilo Material 3).
+  // ---------------------------------------------------------------------
+  // Header: barra preta + título + avatar + pílulas de categoria
+  // ---------------------------------------------------------------------
+
   Widget _buildHeaderBar(BuildContext context) {
     return Container(
       color: Colors.black,
@@ -226,6 +223,11 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
     );
   }
 
+  // ---------------------------------------------------------------------
+  // Branching de dados por serviço (Piped / NewPipe / Invidious) — mesma
+  // lógica real do app original, só troca o widget final de renderização.
+  // ---------------------------------------------------------------------
+
   Widget _buildPipedTrendingOrFeedSection(
       TrendingState trendingState,
       S locals,
@@ -246,35 +248,29 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
 
     if (trendingState.fetchTrendingStatus == ApiStatus.loading ||
         trendingState.fetchTrendingStatus == ApiStatus.initial) {
-      return _buildLoadingList();
+      return _buildLoadingState();
     }
 
     if (homeFeedMode == HomeFeedMode.trendingOnly.name) {
       return _buildErrorOrTrendingSection(
         context,
         trendingState,
-        locals,
         settingsState,
       );
     }
 
     if (homeFeedMode == HomeFeedMode.feedOnly.name) {
       if (trendingState.fetchFeedStatus == ApiStatus.loading) {
-        return _buildLoadingList();
+        return _buildLoadingState();
       }
       if (trendingState.feedResult.isEmpty) {
         return _buildEmptySubscriptionState(context, locals);
       }
-      return _buildFeedSection(
-        trendingState,
-        locals,
-        subscribeState,
-        trendingBloc,
-      );
+      return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
     }
 
     if (trendingState.fetchFeedStatus == ApiStatus.loading) {
-      return _buildLoadingList();
+      return _buildLoadingState();
     }
 
     if (trendingState.feedResult.isEmpty ||
@@ -283,17 +279,11 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
       return _buildErrorOrTrendingSection(
         context,
         trendingState,
-        locals,
         settingsState,
       );
     }
 
-    return _buildFeedSection(
-      trendingState,
-      locals,
-      subscribeState,
-      trendingBloc,
-    );
+    return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
   }
 
   Widget _buildNewPipeTrendingOrFeedSection(
@@ -316,7 +306,7 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
 
     if (trendingState.fetchPersonalizedFeedStatus == ApiStatus.loading ||
         trendingState.fetchPersonalizedFeedStatus == ApiStatus.initial) {
-      return _buildLoadingList();
+      return _buildLoadingState();
     }
 
     if (trendingState.fetchPersonalizedFeedStatus == ApiStatus.error ||
@@ -341,7 +331,6 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
         child: _buildErrorOrTrendingSection(
           context,
           trendingState,
-          locals,
           settingsState,
         ),
       );
@@ -354,10 +343,9 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
           serviceType: settingsState.ytService,
         ));
       },
-      child: PersonalizedFeedSection(
-        trendingState: trendingState,
-        locals: locals,
-        settingsState: settingsState,
+      child: _buildVideoLayout(
+        context,
+        trendingState.personalizedFeedResult,
       ),
     );
   }
@@ -383,35 +371,29 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
 
     if (trendingState.fetchInvidiousTrendingStatus == ApiStatus.loading ||
         trendingState.fetchInvidiousTrendingStatus == ApiStatus.initial) {
-      return _buildLoadingList();
+      return _buildLoadingState();
     }
 
     if (homeFeedMode == HomeFeedMode.trendingOnly.name) {
       return _buildErrorOrTrendingSection(
         context,
         trendingState,
-        locals,
         settingsState,
       );
     }
 
     if (homeFeedMode == HomeFeedMode.feedOnly.name) {
       if (trendingState.fetchFeedStatus == ApiStatus.loading) {
-        return _buildLoadingList();
+        return _buildLoadingState();
       }
       if (trendingState.feedResult.isEmpty) {
         return _buildEmptySubscriptionState(context, locals);
       }
-      return _buildFeedSection(
-        trendingState,
-        locals,
-        subscribeState,
-        trendingBloc,
-      );
+      return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
     }
 
     if (trendingState.fetchFeedStatus == ApiStatus.loading) {
-      return _buildLoadingList();
+      return _buildLoadingState();
     }
 
     if (trendingState.feedResult.isEmpty ||
@@ -419,33 +401,31 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
       return _buildErrorOrTrendingSection(
         context,
         trendingState,
-        locals,
         settingsState,
       );
     }
 
-    return _buildFeedSection(
-      trendingState,
-      locals,
-      subscribeState,
-      trendingBloc,
-    );
+    return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
   }
 
-  Widget _buildLoadingList() {
-    return ListView.separated(
-      separatorBuilder: (context, index) => kHeightBox10,
-      itemBuilder: (context, index) {
-        return const ShimmerHomeVideoInfoCard();
+  Widget _buildFeedLayout(
+    TrendingState trendingState,
+    TrendingBloc trendingBloc,
+    SubscribeState subscribeState,
+  ) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        trendingBloc.add(TrendingEvent.getForcedHomeFeedData(
+          channels: subscribeState.subscribedChannels,
+        ));
       },
-      itemCount: 10,
+      child: _buildVideoLayout(context, trendingState.feedResult),
     );
   }
 
   Widget _buildErrorOrTrendingSection(
     BuildContext context,
     TrendingState trendingState,
-    S locals,
     SettingsState settingsState,
   ) {
     if (settingsState.ytService == YouTubeServices.newpipe.name) {
@@ -460,6 +440,7 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
           ),
         );
       }
+      return _buildVideoLayout(context, trendingState.newPipeTrendingResult);
     } else if (settingsState.ytService == YouTubeServices.invidious.name) {
       if (trendingState.fetchInvidiousTrendingStatus == ApiStatus.error ||
           trendingState.invidiousTrendingResult.isEmpty) {
@@ -472,6 +453,7 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
           ),
         );
       }
+      return _buildVideoLayout(context, trendingState.invidiousTrendingResult);
     } else {
       if (trendingState.fetchTrendingStatus == ApiStatus.error ||
           trendingState.trendingResult.isEmpty) {
@@ -484,43 +466,31 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
           ),
         );
       }
+      return _buildVideoLayout(context, trendingState.trendingResult);
     }
-
-    if (settingsState.ytService == YouTubeServices.newpipe.name) {
-      return NewPipeTrendingVideosSection(
-        locals: locals,
-        state: trendingState,
-      );
-    } else if (settingsState.ytService == YouTubeServices.invidious.name) {
-      return InvidiousTrendingVideosSection(
-        locals: locals,
-        state: trendingState,
-      );
-    }
-
-    return TrendingVideosSection(
-      locals: locals,
-      state: trendingState,
-    );
   }
 
-  Widget _buildFeedSection(
-    TrendingState trendingState,
-    S locals,
-    SubscribeState subscribeState,
-    TrendingBloc trendingBloc,
-  ) {
-    return RefreshIndicator(
-      onRefresh: () async {
-        trendingBloc.add(TrendingEvent.getForcedHomeFeedData(
-          channels: subscribeState.subscribedChannels,
-        ));
-      },
-      child: FeedVideoSection(
-        trendingState: trendingState,
-        locals: locals,
-        subscribeState: subscribeState,
-      ),
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: const [
+        SizedBox(height: 12),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: AspectRatio(
+            aspectRatio: 16 / 10,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0xFFE8E8E8),
+                borderRadius: BorderRadius.all(Radius.circular(20)),
+              ),
+            ),
+          ),
+        ),
+        SizedBox(height: 20),
+        ShimmerHomeVideoInfoCard(),
+        ShimmerHomeVideoInfoCard(),
+      ],
     );
   }
 
@@ -555,6 +525,263 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
                         .withValues(alpha: 0.6),
                   ),
               textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Layout estilo Apple TV: card grande "Up Next" + fileira horizontal
+  // "What to Watch". Usa os mesmos campos que HomeVideoInfoCardWidget já
+  // usa em qualquer backend (title, thumbnail, duration, views,
+  // uploadedDate, uploaderName, uploaderAvatar, url, uploaderUrl) —
+  // então funciona igual em Piped/NewPipe/Invidious sem quebrar.
+  // ---------------------------------------------------------------------
+
+  Widget _buildVideoLayout(BuildContext context, List<dynamic> videos) {
+    if (videos.isEmpty) {
+      return const Center(child: Text('Nada por aqui ainda.'));
+    }
+
+    final upNext = videos.first;
+    final rest = videos.length > 1 ? videos.sublist(1) : <dynamic>[];
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _FeaturedVideoCard(
+            video: upNext,
+            onTap: () => _openVideo(context, upNext),
+          ),
+        ),
+        if (rest.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'What to Watch',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 200,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: rest.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final video = rest[index];
+                return _VideoRowTile(
+                  video: video,
+                  onTap: () => _openVideo(context, video),
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _openVideo(BuildContext context, dynamic video) {
+    final String? videoId = video.url?.split('=').last;
+    final String? channelId = video.uploaderUrl?.split('/').last;
+    if (videoId == null || channelId == null) return;
+
+    BlocProvider.of<WatchBloc>(context).add(
+      WatchEvent.setSelectedVideoBasicDetails(
+        details: VideoBasicInfo(
+          id: videoId,
+          title: video.title,
+          thumbnailUrl: video.thumbnail,
+          channelName: video.uploaderName,
+          channelThumbnailUrl: video.uploaderAvatar,
+          channelId: channelId,
+          uploaderVerified: video.uploaderVerified,
+        ),
+      ),
+    );
+    context.goNamed('watch', pathParameters: {
+      'videoId': videoId,
+      'channelId': channelId,
+    });
+  }
+}
+
+/// Card grande em destaque ("Up Next"), thumbnail cheia + gradiente escuro
+/// + título/canal sobrepostos, igual ao topo da tela Watch Now da Apple TV.
+class _FeaturedVideoCard extends StatelessWidget {
+  final dynamic video;
+  final VoidCallback onTap;
+
+  const _FeaturedVideoCard({required this.video, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final locals = S.of(context);
+    final duration = formatDuration(video?.duration);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AspectRatio(
+        aspectRatio: 16 / 10,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (video?.thumbnail != null)
+                ThumbnailImage(url: video!.thumbnail!)
+              else
+                Container(color: const Color(0xFFE8E8E8)),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.75),
+                      ],
+                      stops: const [0.45, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 12,
+                right: 12,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    duration,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 14,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      video?.title ?? locals.noVideoTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      video?.uploaderName ?? locals.noUploaderName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Card menor usado na fileira horizontal "What to Watch".
+class _VideoRowTile extends StatelessWidget {
+  final dynamic video;
+  final VoidCallback onTap;
+
+  const _VideoRowTile({required this.video, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final locals = S.of(context);
+    final duration = formatDuration(video?.duration);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 220,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (video?.thumbnail != null)
+                      ThumbnailImage(url: video!.thumbnail!)
+                    else
+                      Container(color: const Color(0xFFE8E8E8)),
+                    Positioned(
+                      bottom: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: kBlackColor,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          duration,
+                          style: const TextStyle(
+                            color: kWhiteColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              video?.title ?? locals.noVideoTitle,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              video?.uploaderName ?? locals.noUploaderName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: kGreyColor!),
             ),
           ],
         ),
