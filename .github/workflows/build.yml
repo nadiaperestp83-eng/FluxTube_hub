@@ -44,7 +44,8 @@ jobs:
         run: |
           flutter build apk --release \
             --target-platform android-arm64 \
-            --split-per-abi
+            --split-per-abi \
+            --android-skip-build-dependency-validation
 
       - name: Locate APK
         id: apk
