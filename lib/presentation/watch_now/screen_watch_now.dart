@@ -639,7 +639,7 @@ class _FeaturedVideoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final locals = S.of(context);
     final rawDuration = _safe(() => video.duration);
-    final duration = _safe(() => formatDuration(rawDuration)) ?? '';
+    final duration = _safe(() => formatDuration(rawDuration as int?)) ?? '';
     final thumbnail = _safe(() => video.thumbnail as String?);
     final title = _safe(() => video.title as String?) ?? locals.noVideoTitle;
     final uploaderName =
@@ -745,7 +745,7 @@ class _VideoRowTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final locals = S.of(context);
     final rawDuration = _safe(() => video.duration);
-    final duration = _safe(() => formatDuration(rawDuration)) ?? '';
+    final duration = _safe(() => formatDuration(rawDuration as int?)) ?? '';
     final thumbnail = _safe(() => video.thumbnail as String?);
     final title = _safe(() => video.title as String?) ?? locals.noVideoTitle;
     final uploaderName =
