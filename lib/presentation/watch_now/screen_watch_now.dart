@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
+import 'package:fluxtube/core/colors.dart';
 import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/generated/l10n.dart';
@@ -45,8 +46,7 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
         return SafeArea(
           child: NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) => [
-              SliverToBoxAdapter(child: _buildHeader(context)),
-              SliverToBoxAdapter(child: _buildChips()),
+              SliverToBoxAdapter(child: _buildHeaderBar(context)),
             ],
             body: BlocBuilder<SubscribeBloc, SubscribeState>(
               buildWhen: (previous, current) =>
@@ -150,23 +150,39 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  /// Barra superior escura (título + avatar) + pílulas de categoria em
+  /// vermelho — tudo no mesmo bloco preto, em lista horizontal com rolagem
+  /// (sem cores pastel / estilo Material 3).
+  Widget _buildHeaderBar(BuildContext context) {
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Watch Now',
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Watch Now',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
                 ),
+                const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.white24,
+                  child: Icon(Icons.person, color: Colors.white, size: 20),
+                ),
+              ],
+            ),
           ),
-          const CircleAvatar(
-            radius: 18,
-            child: Icon(Icons.person, size: 20),
-          ),
+          _buildChips(),
         ],
       ),
     );
@@ -174,36 +190,33 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
 
   Widget _buildChips() {
     return SizedBox(
-      height: 44,
+      height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _chipLabels.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
           final selected = index == _selectedChip;
           return GestureDetector(
             onTap: () => setState(() => _selectedChip = index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
+            child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               decoration: BoxDecoration(
-                color: selected
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(999),
+                color: selected ? kRedColor : Colors.white10,
+                borderRadius: BorderRadius.circular(20),
+                border: selected
+                    ? null
+                    : Border.all(color: Colors.white24, width: 1),
               ),
               alignment: Alignment.center,
               child: Text(
                 _chipLabels[index],
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: selected
-                      ? Theme.of(context).colorScheme.onPrimary
-                      : Theme.of(context).colorScheme.onSurface,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.3,
                 ),
               ),
             ),
