@@ -31,6 +31,10 @@ jobs:
           channel: "stable"
           cache: true
 
+      - name: Install Android SDK 37 (Required by plugins)
+        run: |
+          echo "y" | sudo ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager "platforms;android-37"
+
       - name: Install dependencies
         run: flutter pub get
 
