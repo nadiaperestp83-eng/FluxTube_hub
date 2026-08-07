@@ -4,8 +4,10 @@ import android.app.PictureInPictureParams
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Build
+import android.os.Bundle // <-- Adicionado para o onCreate
 import android.util.Rational
 import android.view.WindowManager
+import androidx.core.view.WindowCompat // <-- Crucial para o edge-to-edge
 import androidx.media3.common.util.UnstableApi
 import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -30,6 +32,12 @@ class MainActivity: AudioServiceFragmentActivity() {
     private var isVideoPlaying = false
     private var videoAspectRatio: Rational = Rational(16, 9)
     private var sourceRectHint: Rect? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        // FORÇA O MODO EDGE-TO-EDGE: Permite que o app desenhe sob a status bar e navigation bar
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        super.onCreate(savedInstanceState)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
