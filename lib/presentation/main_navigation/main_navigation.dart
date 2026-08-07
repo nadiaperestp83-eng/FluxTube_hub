@@ -1,4 +1,5 @@
-import 'package:awesome_bottom_bar/awesome_bottom_bar.dart';
+import 'dart:ui';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -57,6 +58,16 @@ int? consumePendingDownloadsTab() {
   return tab;
 }
 
+/// Item simples pra navbar customizada (substitui o TabItem do
+/// awesome_bottom_bar, que não é mais usado).
+class _NavItem {
+  final IconData icon;
+  final String label;
+  final String key;
+
+  const _NavItem({required this.icon, required this.label, required this.key});
+}
+
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
 
@@ -95,52 +106,23 @@ class MainNavigationState extends State<MainNavigation> {
     return _pageCache.putIfAbsent(key, () => page);
   }
 
-  List<TabItem> _getTabItems(S locals, bool showTrending) {
+  List<_NavItem> _getTabItems(S locals, bool showTrending) {
     if (showTrending) {
       return [
-        TabItem(
-            icon: CupertinoIcons.house_fill, title: locals.home, key: "home"),
-        TabItem(
-            icon: CupertinoIcons.flame_fill,
-            title: locals.trending,
-            key: "trending"),
-        TabItem(
-            icon: CupertinoIcons.person_2_fill,
-            title: locals.subscriptions,
-            key: "subscriptions"),
-        TabItem(
-            icon: CupertinoIcons.bookmark_fill,
-            title: locals.saved,
-            key: "saved"),
-        TabItem(
-            icon: CupertinoIcons.arrow_down_circle_fill,
-            title: locals.downloads,
-            key: "downloads"),
-        TabItem(
-            icon: CupertinoIcons.settings,
-            title: locals.settings,
-            key: "settings"),
+        _NavItem(icon: CupertinoIcons.house_fill, label: locals.home, key: "home"),
+        _NavItem(icon: CupertinoIcons.flame_fill, label: locals.trending, key: "trending"),
+        _NavItem(icon: CupertinoIcons.person_2_fill, label: locals.subscriptions, key: "subscriptions"),
+        _NavItem(icon: CupertinoIcons.bookmark_fill, label: locals.saved, key: "saved"),
+        _NavItem(icon: CupertinoIcons.arrow_down_circle_fill, label: locals.downloads, key: "downloads"),
+        _NavItem(icon: CupertinoIcons.settings, label: locals.settings, key: "settings"),
       ];
     } else {
       return [
-        TabItem(
-            icon: CupertinoIcons.house_fill, title: locals.home, key: "home"),
-        TabItem(
-            icon: CupertinoIcons.person_2_fill,
-            title: locals.subscriptions,
-            key: "subscriptions"),
-        TabItem(
-            icon: CupertinoIcons.bookmark_fill,
-            title: locals.saved,
-            key: "saved"),
-        TabItem(
-            icon: CupertinoIcons.arrow_down_circle_fill,
-            title: locals.downloads,
-            key: "downloads"),
-        TabItem(
-            icon: CupertinoIcons.settings,
-            title: locals.settings,
-            key: "settings"),
+        _NavItem(icon: CupertinoIcons.house_fill, label: locals.home, key: "home"),
+        _NavItem(icon: CupertinoIcons.person_2_fill, label: locals.subscriptions, key: "subscriptions"),
+        _NavItem(icon: CupertinoIcons.bookmark_fill, label: locals.saved, key: "saved"),
+        _NavItem(icon: CupertinoIcons.arrow_down_circle_fill, label: locals.downloads, key: "downloads"),
+        _NavItem(icon: CupertinoIcons.settings, label: locals.settings, key: "settings"),
       ];
     }
   }
@@ -183,21 +165,8 @@ class MainNavigationState extends State<MainNavigation> {
           int newIndex;
 
           if (showTrending && !_previousShowTrending!) {
-            // Switching FROM NewPipe (4 tabs) TO other service (5 tabs)
-            // Indices after Home need to shift up by 1 to account for Trending tab
-            // 0 (Home) -> 0 (Home)
-            // 1 (Subscriptions) -> 2 (Subscriptions)
-            // 2 (Saved) -> 3 (Saved)
-            // 3 (Settings) -> 4 (Settings)
             newIndex = currentIndex == 0 ? 0 : currentIndex + 1;
           } else {
-            // Switching FROM other service (5 tabs) TO NewPipe (4 tabs)
-            // Indices after Trending need to shift down by 1
-            // 0 (Home) -> 0 (Home)
-            // 1 (Trending) -> 0 (Home) - Trending doesn't exist, go to Home
-            // 2 (Subscriptions) -> 1 (Subscriptions)
-            // 3 (Saved) -> 2 (Saved)
-            // 4 (Settings) -> 3 (Settings)
             if (currentIndex <= 1) {
               newIndex = 0;
             } else {
@@ -239,18 +208,14 @@ class MainNavigationState extends State<MainNavigation> {
           child: ValueListenableBuilder(
             valueListenable: indexChangeNotifier,
             builder: (BuildContext context, int index, Widget? _) {
-              // Check for pending navigation from notification tap
               final pendingNav = consumePendingNavigation();
               if (pendingNav == 'downloads') {
-                // Find downloads tab index by key
                 final downloadsIndex =
                     items.indexWhere((item) => item.key == 'downloads');
                 if (downloadsIndex >= 0) {
-                  // Get the pending downloads tab before navigating
                   final pendingDownloadsTab = consumePendingDownloadsTab();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     indexChangeNotifier.value = downloadsIndex;
-                    // Set the downloads tab after navigation
                     if (pendingDownloadsTab != null) {
                       downloadsTabNotifier.value = pendingDownloadsTab;
                     }
@@ -258,9 +223,7 @@ class MainNavigationState extends State<MainNavigation> {
                 }
               }
 
-              // Ensure index is within bounds
               final safeIndex = index.clamp(0, maxIndex);
-              // Update the notifier if index was out of bounds (e.g., when trending tab is removed)
               if (index != safeIndex) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   indexChangeNotifier.value = safeIndex;
@@ -279,44 +242,35 @@ class MainNavigationState extends State<MainNavigation> {
                     final entered = await pipService.enterPipMode();
                     if (entered) return;
                   }
-                  // Stop the player before exiting to prevent FlutterJNI crash
                   final globalPlayer = GlobalPlayerController();
                   if (globalPlayer.hasActivePlayer) {
                     globalPlayer.disposePlayer();
-                    // Small delay to ensure player is fully stopped
                     await Future.delayed(const Duration(milliseconds: 100));
                   }
-                  // Exit the app
                   SystemNavigator.pop();
                 },
                 child: Scaffold(
-                  body: SafeArea(
-                    child: _LazyIndexedStack(
-                      index: safeIndex,
-                      children: pages,
-                    ),
-                  ),
-                  bottomNavigationBar: BottomBarSalomon(
-                    items: items,
-                    top: 25,
-                    bottom: 25,
-                    iconSize: 26,
-                    heightItem: 50,
-                    backgroundColor: kTransparentColor,
-                    color: kGreyColor!,
-                    colorSelected: kRedColor,
-                    backgroundSelected: kGreyOpacityColor!,
-                    indexSelected: safeIndex,
-                    titleStyle: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                    onTap: (int index) => indexChangeNotifier.value = index,
+                  extendBody: true,
+                  body: Stack(
+                    children: [
+                      SafeArea(
+                        bottom: false,
+                        child: _LazyIndexedStack(
+                          index: safeIndex,
+                          children: pages,
+                        ),
+                      ),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: _GlassPillNavBar(
+                          items: items,
+                          selectedIndex: safeIndex,
+                          onTap: (i) => indexChangeNotifier.value = i,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               );
@@ -324,6 +278,115 @@ class MainNavigationState extends State<MainNavigation> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Navbar flutuante em formato de pílula com efeito de vidro fosco
+/// (BackdropFilter + blur), substituindo a BottomBarSalomon.
+class _GlassPillNavBar extends StatelessWidget {
+  final List<_NavItem> items;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+
+  const _GlassPillNavBar({
+    required this.items,
+    required this.selectedIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 0, 16, bottomInset > 0 ? bottomInset : 12),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                for (int i = 0; i < items.length; i++)
+                  _NavPillItem(
+                    item: items[i],
+                    selected: i == selectedIndex,
+                    onTap: () => onTap(i),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavPillItem extends StatelessWidget {
+  final _NavItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _NavPillItem({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? kRedColor?.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                item.icon,
+                size: 22,
+                color: selected ? kRedColor : kGreyColor,
+              ),
+              if (selected) ...[
+                const SizedBox(height: 2),
+                Text(
+                  item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: kRedColor,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
