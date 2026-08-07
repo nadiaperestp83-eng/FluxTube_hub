@@ -590,20 +590,22 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
   }
 
   void _openVideo(BuildContext context, dynamic video) {
-    final String? videoId = video.url?.split('=').last;
-    final String? channelId = video.uploaderUrl?.split('/').last;
-    if (videoId == null || channelId == null) return;
+    final String? url = _safe(() => video.url as String?);
+    final String? uploaderUrl = _safe(() => video.uploaderUrl as String?);
+    final String? videoId = url?.split('=').last;
+    final String? channelId = uploaderUrl?.split('/').last;
+    if (videoId == null || channelId == null || videoId.isEmpty) return;
 
     BlocProvider.of<WatchBloc>(context).add(
       WatchEvent.setSelectedVideoBasicDetails(
         details: VideoBasicInfo(
           id: videoId,
-          title: video.title,
-          thumbnailUrl: video.thumbnail,
-          channelName: video.uploaderName,
-          channelThumbnailUrl: video.uploaderAvatar,
+          title: _safe(() => video.title as String?),
+          thumbnailUrl: _safe(() => video.thumbnail as String?),
+          channelName: _safe(() => video.uploaderName as String?),
+          channelThumbnailUrl: _safe(() => video.uploaderAvatar as String?),
           channelId: channelId,
-          uploaderVerified: video.uploaderVerified,
+          uploaderVerified: _safe(() => video.uploaderVerified as bool?),
         ),
       ),
     );
@@ -611,6 +613,17 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
       'videoId': videoId,
       'channelId': channelId,
     });
+  }
+}
+
+/// Tenta ler um campo dinâmico sem derrubar a tela se ele não existir
+/// nesse model específico (NewPipe/Piped/Invidious têm classes diferentes).
+/// Em caso de erro, retorna null em vez de propagar a exceção.
+T? _safe<T>(T? Function() getter) {
+  try {
+    return getter();
+  } catch (_) {
+    return null;
   }
 }
 
@@ -625,7 +638,12 @@ class _FeaturedVideoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final locals = S.of(context);
-    final duration = formatDuration(video?.duration);
+    final rawDuration = _safe(() => video.duration);
+    final duration = _safe(() => formatDuration(rawDuration)) ?? '';
+    final thumbnail = _safe(() => video.thumbnail as String?);
+    final title = _safe(() => video.title as String?) ?? locals.noVideoTitle;
+    final uploaderName =
+        _safe(() => video.uploaderName as String?) ?? locals.noUploaderName;
 
     return GestureDetector(
       onTap: onTap,
@@ -636,8 +654,8 @@ class _FeaturedVideoCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              if (video?.thumbnail != null)
-                ThumbnailImage(url: video!.thumbnail!)
+              if (thumbnail != null)
+                ThumbnailImage(url: thumbnail)
               else
                 Container(color: const Color(0xFFE8E8E8)),
               Positioned.fill(
@@ -655,26 +673,27 @@ class _FeaturedVideoCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                top: 12,
-                right: 12,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    duration,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+              if (duration.isNotEmpty)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      duration,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
               Positioned(
                 left: 16,
                 right: 16,
@@ -684,7 +703,7 @@ class _FeaturedVideoCard extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      video?.title ?? locals.noVideoTitle,
+                      title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -695,7 +714,7 @@ class _FeaturedVideoCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      video?.uploaderName ?? locals.noUploaderName,
+                      uploaderName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -725,7 +744,12 @@ class _VideoRowTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final locals = S.of(context);
-    final duration = formatDuration(video?.duration);
+    final rawDuration = _safe(() => video.duration);
+    final duration = _safe(() => formatDuration(rawDuration)) ?? '';
+    final thumbnail = _safe(() => video.thumbnail as String?);
+    final title = _safe(() => video.title as String?) ?? locals.noVideoTitle;
+    final uploaderName =
+        _safe(() => video.uploaderName as String?) ?? locals.noUploaderName;
 
     return GestureDetector(
       onTap: onTap,
@@ -741,44 +765,45 @@ class _VideoRowTile extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (video?.thumbnail != null)
-                      ThumbnailImage(url: video!.thumbnail!)
+                    if (thumbnail != null)
+                      ThumbnailImage(url: thumbnail)
                     else
                       Container(color: const Color(0xFFE8E8E8)),
-                    Positioned(
-                      bottom: 6,
-                      right: 6,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: kBlackColor,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          duration,
-                          style: const TextStyle(
-                            color: kWhiteColor,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
+                    if (duration.isNotEmpty)
+                      Positioned(
+                        bottom: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: kBlackColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            duration,
+                            style: const TextStyle(
+                              color: kWhiteColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              video?.title ?? locals.noVideoTitle,
+              title,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 2),
             Text(
-              video?.uploaderName ?? locals.noUploaderName,
+              uploaderName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11, color: kGreyColor!),
