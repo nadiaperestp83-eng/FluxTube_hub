@@ -9,9 +9,11 @@ import 'package:fluxtube/core/enums.dart';
 import 'package:fluxtube/core/operations/math_operations.dart';
 import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:fluxtube/widgets/thumbnail_image.dart';
 import 'package:fluxtube/widgets/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 /// Tela "Watch Now" — mesma lógica de dados real do ScreenHome original
 /// (TrendingBloc / SubscribeBloc / SettingsBloc), com layout estilo Apple TV:
@@ -27,6 +29,7 @@ class ScreenWatchNow extends StatefulWidget {
 class _ScreenWatchNowState extends State<ScreenWatchNow> {
   int _selectedChip = 0;
   static const _chipLabels = ['Para você', 'Vídeos', 'Séries', 'Esportes'];
+  Future<List<LocalStoreVideo>>? _historyFuture;
 
   @override
   Widget build(BuildContext context) {
@@ -149,7 +152,7 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
 
   // ---------------------------------------------------------------------
   // Header: estilo YouTube — barra branca, "Home" centralizado, sem
-  // avatar, fonte Montserrat (Inter não está no projeto ainda).
+  // avatar, fonte Inter via google_fonts.
   // ---------------------------------------------------------------------
 
   Widget _buildHeaderBar(BuildContext context) {
@@ -160,13 +163,12 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
             child: Center(
               child: Text(
                 'Home',
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
+                style: GoogleFonts.inter(
                   color: Colors.black,
                   fontSize: 20,
                   fontWeight: FontWeight.w700,
@@ -203,8 +205,7 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
               alignment: Alignment.center,
               child: Text(
                 _chipLabels[index],
-                style: TextStyle(
-                  fontFamily: 'Montserrat',
+                style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: selected ? Colors.white : Colors.black87,
@@ -546,12 +547,11 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
     return ListView(
       padding: const EdgeInsets.only(top: 12, bottom: 24),
       children: [
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: Text(
             'Watch Now',
-            style: TextStyle(
-              fontFamily: 'Montserrat',
+            style: GoogleFonts.inter(
               fontSize: 22,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.3,
@@ -566,15 +566,14 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
           ),
         ),
         const SizedBox(height: 24),
-        _buildHistorySectionPlaceholder(),
+        _buildHistorySection(context),
         if (rest.isNotEmpty) ...[
           const SizedBox(height: 24),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'What to Watch',
-              style: TextStyle(
-                fontFamily: 'Montserrat',
+              style: GoogleFonts.inter(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
               ),
@@ -602,68 +601,92 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
     );
   }
 
-  /// Layout da seção "History" — só visual por enquanto (mock), pra você
-  /// aprovar antes de eu conectar no histórico real (enable_watch_history).
-  Widget _buildHistorySectionPlaceholder() {
-    const mockCount = 5;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'History',
-            style: TextStyle(
-              fontFamily: 'Montserrat',
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 150,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: mockCount,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              return SizedBox(
-                width: 220,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8E8E8),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        alignment: Alignment.center,
-                        child: const Icon(
-                          Icons.history,
-                          color: Color(0xFFBDBDBD),
-                          size: 28,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      height: 10,
-                      width: 140,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE8E8E8),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ],
+  /// Seção "History" conectada de verdade ao banco Drift local
+  /// (AppDatabase.getHistoryVideos), respeitando o perfil ativo.
+  Widget _buildHistorySection(BuildContext context) {
+    return FutureBuilder<List<LocalStoreVideo>>(
+      future: _historyFuture ??= AppDatabase.instance
+          .getHistoryVideos(context.read<SettingsBloc>().state.currentProfile),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return _buildHistoryLoading();
+        }
+        final items = snapshot.data ?? const <LocalStoreVideo>[];
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'History',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
                 ),
-              );
-            },
-          ),
-        ),
-      ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 200,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final video = items[index];
+                  return _VideoRowTile(
+                    video: video,
+                    onTap: () => _openVideo(context, video),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryLoading() {
+    return SizedBox(
+      height: 200,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: 4,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          return SizedBox(
+            width: 220,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8E8E8),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 10,
+                  width: 140,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8E8E8),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -742,6 +765,10 @@ String? _extractVideoId(dynamic v) {
 String? _extractChannelId(dynamic v) {
   final ready = _safe(() => v.channelId as String?);
   if (ready != null && ready.isNotEmpty) return ready;
+  // LocalStoreVideo (histórico local) guarda o id do canal direto em
+  // `.uploaderId`, sem URL pra fazer parse.
+  final uploaderId = _safe(() => v.uploaderId as String?);
+  if (uploaderId != null && uploaderId.isNotEmpty) return uploaderId;
   final uploaderUrl = _safe(() => v.uploaderUrl as String?);
   if (uploaderUrl == null) return null;
   final uri = Uri.tryParse(uploaderUrl);
