@@ -592,20 +592,18 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
   }
 
   void _openVideo(BuildContext context, dynamic video) {
-    final String? url = _safe(() => video.url as String?);
-    final String? uploaderUrl = _safe(() => video.uploaderUrl as String?);
-    final String? videoId = url?.split('=').last;
-    final String? channelId = uploaderUrl?.split('/').last;
+    final String? videoId = _extractVideoId(video);
+    final String? channelId = _extractChannelId(video);
     if (videoId == null || channelId == null || videoId.isEmpty) return;
 
     BlocProvider.of<WatchBloc>(context).add(
       WatchEvent.setSelectedVideoBasicDetails(
         details: VideoBasicInfo(
           id: videoId,
-          title: _safe(() => video.title as String?),
-          thumbnailUrl: _safe(() => video.thumbnail as String?),
+          title: _extractTitle(video),
+          thumbnailUrl: _extractThumbnail(video),
           channelName: _safe(() => video.uploaderName as String?),
-          channelThumbnailUrl: _safe(() => video.uploaderAvatar as String?),
+          channelThumbnailUrl: _extractUploaderAvatar(video),
           channelId: channelId,
           uploaderVerified: _safe(() => video.uploaderVerified as bool?),
         ),
@@ -629,6 +627,56 @@ T? _safe<T>(T? Function() getter) {
   }
 }
 
+// -------------------------------------------------------------------------
+// Extratores com fallback: cada backend usa nomes de campo diferentes pro
+// mesmo dado (ex: Piped usa `.title`/`.thumbnail`, NewPipe Extractor usa
+// `.name`/`.thumbnailUrl`). Tenta os dois, nessa ordem, sem crashar se um
+// deles não existir na classe.
+// -------------------------------------------------------------------------
+
+String? _extractTitle(dynamic v) =>
+    _safe(() => v.title as String?) ?? _safe(() => v.name as String?);
+
+String? _extractThumbnail(dynamic v) =>
+    _safe(() => v.thumbnail as String?) ??
+    _safe(() => v.thumbnailUrl as String?);
+
+String? _extractUploaderAvatar(dynamic v) =>
+    _safe(() => v.uploaderAvatar as String?) ??
+    _safe(() => v.uploaderAvatarUrl as String?);
+
+/// Views: Piped usa `.views` (int), NewPipe usa `.viewCount` (int).
+int? _extractViews(dynamic v) =>
+    _safe(() => v.views as int?) ?? _safe(() => v.viewCount as int?);
+
+/// videoId: NewPipeSearchItem já expõe um getter pronto `.videoId`;
+/// outros backends não têm esse getter, então cai no fallback manual
+/// (extrair da querystring `?v=` da própria `.url`).
+String? _extractVideoId(dynamic v) {
+  final ready = _safe(() => v.videoId as String?);
+  if (ready != null && ready.isNotEmpty) return ready;
+  final url = _safe(() => v.url as String?);
+  if (url == null) return null;
+  final uri = Uri.tryParse(url);
+  return uri?.queryParameters['v'] ?? uri?.pathSegments.lastOrNull;
+}
+
+/// channelId: mesma lógica — usa o getter pronto se existir, senão
+/// extrai manualmente da `.uploaderUrl`.
+String? _extractChannelId(dynamic v) {
+  final ready = _safe(() => v.channelId as String?);
+  if (ready != null && ready.isNotEmpty) return ready;
+  final uploaderUrl = _safe(() => v.uploaderUrl as String?);
+  if (uploaderUrl == null) return null;
+  final uri = Uri.tryParse(uploaderUrl);
+  if (uri == null) return null;
+  if (uri.pathSegments.contains('channel')) {
+    final idx = uri.pathSegments.indexOf('channel');
+    if (idx + 1 < uri.pathSegments.length) return uri.pathSegments[idx + 1];
+  }
+  return uri.pathSegments.lastOrNull;
+}
+
 /// Card grande em destaque ("Up Next"), thumbnail cheia + gradiente escuro
 /// + título/canal sobrepostos, igual ao topo da tela Watch Now da Apple TV.
 class _FeaturedVideoCard extends StatelessWidget {
@@ -642,8 +690,8 @@ class _FeaturedVideoCard extends StatelessWidget {
     final locals = S.of(context);
     final rawDuration = _safe(() => video.duration);
     final duration = _safe(() => formatDuration(rawDuration as int?)) ?? '';
-    final thumbnail = _safe(() => video.thumbnail as String?);
-    final title = _safe(() => video.title as String?) ?? locals.noVideoTitle;
+    final thumbnail = _extractThumbnail(video);
+    final title = _extractTitle(video) ?? locals.noVideoTitle;
     final uploaderName =
         _safe(() => video.uploaderName as String?) ?? locals.noUploaderName;
 
@@ -748,8 +796,8 @@ class _VideoRowTile extends StatelessWidget {
     final locals = S.of(context);
     final rawDuration = _safe(() => video.duration);
     final duration = _safe(() => formatDuration(rawDuration as int?)) ?? '';
-    final thumbnail = _safe(() => video.thumbnail as String?);
-    final title = _safe(() => video.title as String?) ?? locals.noVideoTitle;
+    final thumbnail = _extractThumbnail(video);
+    final title = _extractTitle(video) ?? locals.noVideoTitle;
     final uploaderName =
         _safe(() => video.uploaderName as String?) ?? locals.noUploaderName;
 
