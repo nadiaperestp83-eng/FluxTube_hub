@@ -148,40 +148,35 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
   }
 
   // ---------------------------------------------------------------------
-  // Header: barra preta + título + avatar + pílulas de categoria
+  // Header: estilo YouTube — barra branca, "Home" centralizado, sem
+  // avatar, fonte Montserrat (Inter não está no projeto ainda).
   // ---------------------------------------------------------------------
 
   Widget _buildHeaderBar(BuildContext context) {
     final topInset = MediaQuery.of(context).padding.top;
     return Container(
-      color: Colors.black,
-      padding: EdgeInsets.only(top: topInset, bottom: 16),
+      color: Colors.white,
+      padding: EdgeInsets.only(top: topInset),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Watch Now',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 14),
+            child: Center(
+              child: Text(
+                'Home',
+                style: TextStyle(
+                  fontFamily: 'Montserrat',
+                  color: Colors.black,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
                 ),
-                const CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.white24,
-                  child: Icon(Icons.person, color: Colors.white, size: 20),
-                ),
-              ],
+              ),
             ),
           ),
           _buildChips(),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -202,20 +197,18 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
               decoration: BoxDecoration(
-                color: selected ? kRedColor : Colors.white10,
+                color: selected ? kRedColor : const Color(0xFFF1F1F3),
                 borderRadius: BorderRadius.circular(20),
-                border: selected
-                    ? null
-                    : Border.all(color: Colors.white24, width: 1),
               ),
               alignment: Alignment.center,
               child: Text(
                 _chipLabels[index],
-                style: const TextStyle(
+                style: TextStyle(
+                  fontFamily: 'Montserrat',
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: 0.3,
+                  color: selected ? Colors.white : Colors.black87,
+                  letterSpacing: 0.2,
                 ),
               ),
             ),
@@ -553,6 +546,18 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
     return ListView(
       padding: const EdgeInsets.only(top: 12, bottom: 24),
       children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            'Watch Now',
+            style: TextStyle(
+              fontFamily: 'Montserrat',
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: _FeaturedVideoCard(
@@ -560,13 +565,19 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
             onTap: () => _openVideo(context, upNext),
           ),
         ),
+        const SizedBox(height: 24),
+        _buildHistorySectionPlaceholder(),
         if (rest.isNotEmpty) ...[
           const SizedBox(height: 24),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               'What to Watch',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                fontFamily: 'Montserrat',
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -587,6 +598,71 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  /// Layout da seção "History" — só visual por enquanto (mock), pra você
+  /// aprovar antes de eu conectar no histórico real (enable_watch_history).
+  Widget _buildHistorySectionPlaceholder() {
+    const mockCount = 5;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'History',
+            style: TextStyle(
+              fontFamily: 'Montserrat',
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: mockCount,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              return SizedBox(
+                width: 220,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8E8E8),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.history,
+                          color: Color(0xFFBDBDBD),
+                          size: 28,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 10,
+                      width: 140,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8E8E8),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
       ],
     );
   }
