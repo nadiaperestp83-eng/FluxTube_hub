@@ -22,28 +22,6 @@ if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
 
-def keystoreProperties = new Properties()
-def keystorePropertiesFile = rootProject.file('key.properties')
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-}
-def releaseStoreFile = keystoreProperties['storeFile']
-        ? file(keystoreProperties['storeFile'])
-        : null
-def hasReleaseKeystore = releaseStoreFile != null && releaseStoreFile.exists()
-
-gradle.taskGraph.whenReady { taskGraph ->
-    def buildingRelease = taskGraph.allTasks.any { task ->
-        task.name.toLowerCase(Locale.ROOT).contains('release')
-    }
-    if (buildingRelease && !hasReleaseKeystore) {
-        throw new IllegalStateException(
-                "Release keystore is missing. Check android/key.properties storeFile; " +
-                        "paths are resolved from android/app. For android/app/key.jks use storeFile=key.jks."
-        )
-    }
-}
-
 android {
     namespace "com.fazilvk.fluxtube"
     compileSdk flutter.compileSdkVersion
@@ -76,12 +54,7 @@ android {
     }   
     signingConfigs {
         release {
-            if (hasReleaseKeystore) {
-                storeFile releaseStoreFile
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storePassword keystoreProperties['storePassword']
-            }
+            // Configuração de keystore removida para permitir builds limpos sem chave obrigatória
         }
     }
 
@@ -99,9 +72,6 @@ android {
 
     buildTypes {
         release {
-            if (hasReleaseKeystore) {
-                signingConfig signingConfigs.release
-            }
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
