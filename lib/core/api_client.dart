@@ -169,6 +169,10 @@ class ApiClient {
       case DioExceptionType.connectionTimeout:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
+      // Added in dio 5.9+: timeout while transforming the request/response
+      // body (e.g. a slow custom RequestTransformer). Same bucket as the
+      // other timeouts.
+      case DioExceptionType.transformTimeout:
         return MainFailure.timeout(message: e.message);
 
       case DioExceptionType.connectionError:
