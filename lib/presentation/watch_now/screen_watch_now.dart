@@ -39,12 +39,13 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
           previous.defaultRegion != current.defaultRegion ||
           previous.homeFeedMode != current.homeFeedMode,
       builder: (context, settingsState) {
-        return SafeArea(
-          child: NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) => [
-              SliverToBoxAdapter(child: _buildHeaderBar(context)),
-            ],
-            body: BlocBuilder<SubscribeBloc, SubscribeState>(
+        return NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverToBoxAdapter(child: _buildHeaderBar(context)),
+          ],
+          body: SafeArea(
+            top: false,
+            child: BlocBuilder<SubscribeBloc, SubscribeState>(
               buildWhen: (previous, current) =>
                   previous.subscribedChannels.length !=
                   current.subscribedChannels.length,
@@ -151,14 +152,15 @@ class _ScreenWatchNowState extends State<ScreenWatchNow> {
   // ---------------------------------------------------------------------
 
   Widget _buildHeaderBar(BuildContext context) {
+    final topInset = MediaQuery.of(context).padding.top;
     return Container(
       color: Colors.black,
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(top: topInset, bottom: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
