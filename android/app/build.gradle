@@ -46,7 +46,7 @@ gradle.taskGraph.whenReady { taskGraph ->
 
 android {
     namespace "com.fazilvk.fluxtube"
-    compileSdk = 37
+    compileSdk flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
     compileOptions {
