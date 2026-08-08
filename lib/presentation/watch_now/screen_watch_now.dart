@@ -1,164 +1,547 @@
-import 'package:easy_debounce/easy_debounce.dart';
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluxtube/application/application.dart';
 import 'package:fluxtube/core/colors.dart';
+import 'package:fluxtube/core/constants.dart';
 import 'package:fluxtube/core/enums.dart';
+import 'package:fluxtube/core/operations/math_operations.dart';
+import 'package:fluxtube/domain/watch/models/basic_info.dart';
 import 'package:fluxtube/generated/l10n.dart';
+import 'package:fluxtube/infrastructure/database/database.dart';
 import 'package:fluxtube/widgets/thumbnail_image.dart';
+import 'package:fluxtube/widgets/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-/// Tela de busca dedicada, estilo YouTube: campo de busca focado no topo,
-/// sugestões enquanto digita, histórico quando vazio, resultados em lista
-/// vertical com paginação. 100% conectada ao SearchBloc/SearchService real
-/// — nenhum dado mockado.
-///
-/// Abra com:
-///   Navigator.of(context, rootNavigator: true).push(
-///     MaterialPageRoute(builder: (_) => const ScreenSearchNow()),
-///   );
-class ScreenSearchNow extends StatefulWidget {
-  const ScreenSearchNow({super.key});
+import '../search_now/screen_search_now.dart';
+
+/// Tela "Watch Now" — mesma lógica de dados real do ScreenHome original
+/// (TrendingBloc / SubscribeBloc / SettingsBloc), com layout estilo Apple TV:
+/// card grande "Up Next" + fileira horizontal "What to Watch", em vez de
+/// lista vertical tipo feed.
+class ScreenWatchNow extends StatefulWidget {
+  const ScreenWatchNow({super.key});
 
   @override
-  State<ScreenSearchNow> createState() => _ScreenSearchNowState();
+  State<ScreenWatchNow> createState() => _ScreenWatchNowState();
 }
 
-class _ScreenSearchNowState extends State<ScreenSearchNow> {
-  final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
-  final ScrollController _scrollController = ScrollController();
-  bool _hasSearched = false;
-  String _lastSubmittedQuery = '';
+class _ScreenWatchNowState extends State<ScreenWatchNow> {
+  int _selectedChip = 0;
+  static const _chipLabels = ['Para você', 'Vídeos', 'Séries', 'Esportes'];
+  Future<List<LocalStoreVideo>>? _historyFuture;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      FocusScope.of(context).requestFocus(_focusNode);
-      final settings = context.read<SettingsBloc>().state;
-      context.read<SearchBloc>().add(
-            SearchEvent.getSearchHistory(
-              profileName: settings.currentProfile,
-              limit: 15,
+  Widget build(BuildContext context) {
+    final trendingBloc = BlocProvider.of<TrendingBloc>(context);
+    final locals = S.of(context);
+
+    return BlocBuilder<SettingsBloc, SettingsState>(
+      buildWhen: (previous, current) =>
+          previous.ytService != current.ytService ||
+          previous.defaultRegion != current.defaultRegion ||
+          previous.homeFeedMode != current.homeFeedMode,
+      builder: (context, settingsState) {
+        return NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverToBoxAdapter(child: _buildHeaderBar(context)),
+          ],
+          body: SafeArea(
+            top: false,
+            child: BlocBuilder<SubscribeBloc, SubscribeState>(
+              buildWhen: (previous, current) =>
+                  previous.subscribedChannels.length !=
+                  current.subscribedChannels.length,
+              builder: (context, subscribeState) {
+                if (subscribeState.subscribedChannels.isNotEmpty &&
+                    subscribeState.oldList.length !=
+                        subscribeState.subscribedChannels.length) {
+                  log("oldList: ${subscribeState.oldList.length} & subscribedChannels: ${subscribeState.subscribedChannels.length}");
+                  if (settingsState.ytService != YouTubeServices.newpipe.name) {
+                    trendingBloc.add(GetForcedHomeFeedData(
+                        channels: subscribeState.subscribedChannels));
+                  }
+                  BlocProvider.of<SubscribeBloc>(context).add(
+                      SubscribeEvent.updateSubscribeOldList(
+                          subscribedChannels:
+                              subscribeState.subscribedChannels));
+                }
+                return BlocBuilder<TrendingBloc, TrendingState>(
+                  buildWhen: (previous, current) {
+                    return previous.fetchTrendingStatus !=
+                            current.fetchTrendingStatus ||
+                        previous.fetchInvidiousTrendingStatus !=
+                            current.fetchInvidiousTrendingStatus ||
+                        previous.fetchNewPipeTrendingStatus !=
+                            current.fetchNewPipeTrendingStatus ||
+                        previous.fetchFeedStatus != current.fetchFeedStatus ||
+                        previous.fetchNewPipeFeedStatus !=
+                            current.fetchNewPipeFeedStatus ||
+                        previous.newPipeFeedResult !=
+                            current.newPipeFeedResult ||
+                        previous.fetchPersonalizedFeedStatus !=
+                            current.fetchPersonalizedFeedStatus ||
+                        previous.personalizedFeedResult !=
+                            current.personalizedFeedResult ||
+                        previous.personalizedFeedDisplayCount !=
+                            current.personalizedFeedDisplayCount ||
+                        previous.isLoadingMorePersonalizedFeed !=
+                            current.isLoadingMorePersonalizedFeed ||
+                        previous.hasMorePersonalizedContent !=
+                            current.hasMorePersonalizedContent ||
+                        previous.feedDisplayCount != current.feedDisplayCount ||
+                        previous.isLoadingMoreFeed !=
+                            current.isLoadingMoreFeed ||
+                        previous.newPipeFeedDisplayCount !=
+                            current.newPipeFeedDisplayCount ||
+                        previous.isLoadingMoreNewPipeFeed !=
+                            current.isLoadingMoreNewPipeFeed ||
+                        previous.trendingDisplayCount !=
+                            current.trendingDisplayCount ||
+                        previous.isLoadingMoreTrending !=
+                            current.isLoadingMoreTrending ||
+                        previous.newPipeTrendingDisplayCount !=
+                            current.newPipeTrendingDisplayCount ||
+                        previous.isLoadingMoreNewPipeTrending !=
+                            current.isLoadingMoreNewPipeTrending ||
+                        previous.invidiousTrendingDisplayCount !=
+                            current.invidiousTrendingDisplayCount ||
+                        previous.isLoadingMoreInvidiousTrending !=
+                            current.isLoadingMoreInvidiousTrending;
+                  },
+                  builder: (context, trendingState) {
+                    if (settingsState.ytService ==
+                        YouTubeServices.newpipe.name) {
+                      return _buildNewPipeTrendingOrFeedSection(
+                        trendingState,
+                        locals,
+                        context,
+                        subscribeState,
+                        trendingBloc,
+                        settingsState,
+                      );
+                    } else if (settingsState.ytService ==
+                        YouTubeServices.invidious.name) {
+                      return _buildInvidiousTrendingOrFeedSection(
+                        trendingState,
+                        locals,
+                        context,
+                        subscribeState,
+                        trendingBloc,
+                        settingsState,
+                      );
+                    } else {
+                      return _buildPipedTrendingOrFeedSection(
+                        trendingState,
+                        locals,
+                        context,
+                        subscribeState,
+                        trendingBloc,
+                        settingsState,
+                      );
+                    }
+                  },
+                );
+              },
             ),
-          );
-    });
-    _scrollController.addListener(_onScroll);
-  }
-
-  @override
-  void dispose() {
-    EasyDebounce.cancel('search-suggestions');
-    _controller.dispose();
-    _focusNode.dispose();
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  void _onScroll() {
-    if (!_hasSearched) return;
-    if (!_scrollController.hasClients) return;
-    final maxScroll = _scrollController.position.maxScrollExtent;
-    if (_scrollController.offset >= maxScroll - 300) {
-      _loadMore();
-    }
-  }
-
-  String get _serviceType =>
-      context.read<SettingsBloc>().state.ytService;
-
-  void _onQueryChanged(String value) {
-    setState(() {}); // atualiza o botão de limpar / troca histórico<->sugestão
-    if (value.trim().isEmpty) return;
-    EasyDebounce.debounce(
-      'search-suggestions',
-      const Duration(milliseconds: 350),
-      () {
-        context.read<SearchBloc>().add(
-              SearchEvent.getSearchSuggestion(
-                query: value.trim(),
-                serviceType: _serviceType,
-              ),
-            );
+          ),
+        );
       },
     );
   }
 
-  void _submitSearch(String query) {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return;
-    EasyDebounce.cancel('search-suggestions');
-    _focusNode.unfocus();
-    setState(() {
-      _hasSearched = true;
-      _lastSubmittedQuery = trimmed;
-    });
-    final settings = context.read<SettingsBloc>().state;
-    context
-        .read<SearchBloc>()
-        .add(SearchEvent.getSearchResult(query: trimmed, serviceType: _serviceType));
-    context.read<SearchBloc>().add(
-          SearchEvent.saveSearchQuery(
-            query: trimmed,
-            profileName: settings.currentProfile,
+  // ---------------------------------------------------------------------
+  // Header: estilo YouTube — barra branca, "Home" centralizado, sem
+  // avatar, fonte Inter via google_fonts.
+  // ---------------------------------------------------------------------
+
+  Widget _buildHeaderBar(BuildContext context) {
+    final topInset = MediaQuery.of(context).padding.top;
+    return Container(
+      color: Colors.white,
+      padding: EdgeInsets.only(top: topInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Center(
+                  child: Text(
+                    'Home',
+                    style: GoogleFonts.inter(
+                      color: Colors.black,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 12,
+                  child: IconButton(
+                    icon: const Icon(Icons.search, color: Colors.black87),
+                    tooltip: 'Buscar vídeos',
+                    onPressed: () {
+                      Navigator.of(context, rootNavigator: true).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ScreenSearchNow(),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
-        );
+          _buildChips(),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
   }
 
-  void _loadMore() {
-    final state = context.read<SearchBloc>().state;
-    if (_serviceType == YouTubeServices.newpipe.name) {
-      if (state.isMoreNewPipeFetchCompleted ||
-          state.fetchMoreNewPipeSearchResultStatus == ApiStatus.loading) {
-        return;
+  Widget _buildChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _chipLabels.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final selected = index == _selectedChip;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedChip = index),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: BoxDecoration(
+                color: selected ? kRedColor : const Color(0xFFF1F1F3),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                _chipLabels[index],
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: selected ? Colors.white : Colors.black87,
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Branching de dados por serviço (Piped / NewPipe / Invidious) — mesma
+  // lógica real do app original, só troca o widget final de renderização.
+  // ---------------------------------------------------------------------
+
+  Widget _buildPipedTrendingOrFeedSection(
+      TrendingState trendingState,
+      S locals,
+      BuildContext context,
+      SubscribeState subscribeState,
+      TrendingBloc trendingBloc,
+      SettingsState settingsState) {
+    final homeFeedMode = settingsState.homeFeedMode;
+
+    if (trendingState.trendingResult.isEmpty &&
+        !(trendingState.fetchTrendingStatus == ApiStatus.error)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        trendingBloc.add(TrendingEvent.getTrendingData(
+            serviceType: settingsState.ytService,
+            region: settingsState.defaultRegion));
+      });
+    }
+
+    if (trendingState.fetchTrendingStatus == ApiStatus.loading ||
+        trendingState.fetchTrendingStatus == ApiStatus.initial) {
+      return _buildLoadingState();
+    }
+
+    if (homeFeedMode == HomeFeedMode.trendingOnly.name) {
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        settingsState,
+      );
+    }
+
+    if (homeFeedMode == HomeFeedMode.feedOnly.name) {
+      if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+        return _buildLoadingState();
       }
-      context.read<SearchBloc>().add(SearchEvent.getMoreSearchResult(
-            query: _lastSubmittedQuery,
-            serviceType: _serviceType,
-            nextPage: state.newPipeSearchResult?.nextPage,
-          ));
-    } else if (_serviceType == YouTubeServices.invidious.name) {
-      if (state.isMoreInvidiousFetchCompleted ||
-          state.fetchMoreInvidiousSearchResultStatus == ApiStatus.loading) {
-        return;
+      if (trendingState.feedResult.isEmpty) {
+        return _buildEmptySubscriptionState(context, locals);
       }
-      context.read<SearchBloc>().add(SearchEvent.getMoreSearchResult(
-            query: _lastSubmittedQuery,
-            serviceType: _serviceType,
+      return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
+    }
+
+    if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+      return _buildLoadingState();
+    }
+
+    if (trendingState.feedResult.isEmpty ||
+        trendingState.fetchFeedStatus == ApiStatus.error) {
+      log("Feed Error or empty - showing trending");
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        settingsState,
+      );
+    }
+
+    return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
+  }
+
+  Widget _buildNewPipeTrendingOrFeedSection(
+    TrendingState trendingState,
+    S locals,
+    BuildContext context,
+    SubscribeState subscribeState,
+    TrendingBloc trendingBloc,
+    SettingsState settingsState,
+  ) {
+    if (trendingState.personalizedFeedResult.isEmpty &&
+        trendingState.fetchPersonalizedFeedStatus == ApiStatus.initial) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        trendingBloc.add(TrendingEvent.getPersonalizedFeed(
+          profileName: settingsState.currentProfile,
+          serviceType: settingsState.ytService,
+        ));
+      });
+    }
+
+    if (trendingState.fetchPersonalizedFeedStatus == ApiStatus.loading ||
+        trendingState.fetchPersonalizedFeedStatus == ApiStatus.initial) {
+      return _buildLoadingState();
+    }
+
+    if (trendingState.fetchPersonalizedFeedStatus == ApiStatus.error ||
+        (trendingState.personalizedFeedResult.isEmpty &&
+            trendingState.fetchPersonalizedFeedStatus == ApiStatus.loaded)) {
+      log("Personalized feed error/empty - falling back to trending");
+      if (trendingState.newPipeTrendingResult.isEmpty &&
+          trendingState.fetchNewPipeTrendingStatus != ApiStatus.loading) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          trendingBloc.add(TrendingEvent.getTrendingData(
+              serviceType: settingsState.ytService,
+              region: settingsState.defaultRegion));
+        });
+      }
+      return RefreshIndicator(
+        onRefresh: () async {
+          trendingBloc.add(TrendingEvent.getForcedPersonalizedFeed(
+            profileName: settingsState.currentProfile,
+            serviceType: settingsState.ytService,
           ));
+        },
+        child: _buildErrorOrTrendingSection(
+          context,
+          trendingState,
+          settingsState,
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async {
+        trendingBloc.add(TrendingEvent.getForcedPersonalizedFeed(
+          profileName: settingsState.currentProfile,
+          serviceType: settingsState.ytService,
+        ));
+      },
+      child: _buildVideoLayout(
+        context,
+        trendingState.personalizedFeedResult,
+      ),
+    );
+  }
+
+  Widget _buildInvidiousTrendingOrFeedSection(
+    TrendingState trendingState,
+    S locals,
+    BuildContext context,
+    SubscribeState subscribeState,
+    TrendingBloc trendingBloc,
+    SettingsState settingsState,
+  ) {
+    final homeFeedMode = settingsState.homeFeedMode;
+
+    if (trendingState.invidiousTrendingResult.isEmpty &&
+        !(trendingState.fetchInvidiousTrendingStatus == ApiStatus.error)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        trendingBloc.add(TrendingEvent.getTrendingData(
+            serviceType: settingsState.ytService,
+            region: settingsState.defaultRegion));
+      });
+    }
+
+    if (trendingState.fetchInvidiousTrendingStatus == ApiStatus.loading ||
+        trendingState.fetchInvidiousTrendingStatus == ApiStatus.initial) {
+      return _buildLoadingState();
+    }
+
+    if (homeFeedMode == HomeFeedMode.trendingOnly.name) {
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        settingsState,
+      );
+    }
+
+    if (homeFeedMode == HomeFeedMode.feedOnly.name) {
+      if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+        return _buildLoadingState();
+      }
+      if (trendingState.feedResult.isEmpty) {
+        return _buildEmptySubscriptionState(context, locals);
+      }
+      return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
+    }
+
+    if (trendingState.fetchFeedStatus == ApiStatus.loading) {
+      return _buildLoadingState();
+    }
+
+    if (trendingState.feedResult.isEmpty ||
+        trendingState.fetchFeedStatus == ApiStatus.error) {
+      return _buildErrorOrTrendingSection(
+        context,
+        trendingState,
+        settingsState,
+      );
+    }
+
+    return _buildFeedLayout(trendingState, trendingBloc, subscribeState);
+  }
+
+  Widget _buildFeedLayout(
+    TrendingState trendingState,
+    TrendingBloc trendingBloc,
+    SubscribeState subscribeState,
+  ) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        trendingBloc.add(TrendingEvent.getForcedHomeFeedData(
+          channels: subscribeState.subscribedChannels,
+        ));
+      },
+      child: _buildVideoLayout(context, trendingState.feedResult),
+    );
+  }
+
+  Widget _buildErrorOrTrendingSection(
+    BuildContext context,
+    TrendingState trendingState,
+    SettingsState settingsState,
+  ) {
+    if (settingsState.ytService == YouTubeServices.newpipe.name) {
+      if (trendingState.fetchNewPipeTrendingStatus == ApiStatus.error ||
+          trendingState.newPipeTrendingResult.isEmpty) {
+        return ErrorRetryWidget(
+          lottie: 'assets/dog.zip',
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
+        );
+      }
+      return _buildVideoLayout(context, trendingState.newPipeTrendingResult);
+    } else if (settingsState.ytService == YouTubeServices.invidious.name) {
+      if (trendingState.fetchInvidiousTrendingStatus == ApiStatus.error ||
+          trendingState.invidiousTrendingResult.isEmpty) {
+        return ErrorRetryWidget(
+          lottie: 'assets/dog.zip',
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
+        );
+      }
+      return _buildVideoLayout(context, trendingState.invidiousTrendingResult);
     } else {
-      if (state.isMoreFetchCompleted ||
-          state.fetchMoreSearchResultStatus == ApiStatus.loading) {
-        return;
+      if (trendingState.fetchTrendingStatus == ApiStatus.error ||
+          trendingState.trendingResult.isEmpty) {
+        return ErrorRetryWidget(
+          lottie: 'assets/dog.zip',
+          onTap: () => BlocProvider.of<TrendingBloc>(context).add(
+            TrendingEvent.getForcedTrendingData(
+                serviceType: settingsState.ytService,
+                region: settingsState.defaultRegion),
+          ),
+        );
       }
-      context.read<SearchBloc>().add(SearchEvent.getMoreSearchResult(
-            query: _lastSubmittedQuery,
-            serviceType: _serviceType,
-            nextPage: state.result?.nextpage,
-          ));
+      return _buildVideoLayout(context, trendingState.trendingResult);
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final locals = S.of(context);
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildSearchBar(locals),
-            Expanded(
-              child: BlocBuilder<SearchBloc, SearchState>(
-                builder: (context, state) {
-                  if (!_hasSearched) {
-                    return _buildSuggestionsOrHistory(context, state, locals);
-                  }
-                  return _buildResults(context, state, locals);
-                },
+  Widget _buildLoadingState() {
+    return ListView(
+      padding: EdgeInsets.zero,
+      children: const [
+        SizedBox(height: 12),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: AspectRatio(
+            aspectRatio: 16 / 10,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0xFFE8E8E8),
+                borderRadius: BorderRadius.all(Radius.circular(20)),
               ),
+            ),
+          ),
+        ),
+        SizedBox(height: 20),
+        ShimmerHomeVideoInfoCard(),
+        ShimmerHomeVideoInfoCard(),
+      ],
+    );
+  }
+
+  Widget _buildEmptySubscriptionState(BuildContext context, S locals) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.subscriptions_outlined,
+              size: 64,
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.5),
+            ),
+            kHeightBox20,
+            Text(
+              locals.noSubscriptions,
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            kHeightBox10,
+            Text(
+              locals.noSubscriptionsHint,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurface
+                        .withValues(alpha: 0.6),
+                  ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -166,214 +549,186 @@ class _ScreenSearchNowState extends State<ScreenSearchNow> {
     );
   }
 
-  Widget _buildSearchBar(S locals) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black87),
-            onPressed: () => Navigator.of(context).maybePop(),
+  // ---------------------------------------------------------------------
+  // Layout estilo Apple TV: card grande "Up Next" + fileira horizontal
+  // "What to Watch". Usa os mesmos campos que HomeVideoInfoCardWidget já
+  // usa em qualquer backend (title, thumbnail, duration, views,
+  // uploadedDate, uploaderName, uploaderAvatar, url, uploaderUrl) —
+  // então funciona igual em Piped/NewPipe/Invidious sem quebrar.
+  // ---------------------------------------------------------------------
+
+  Widget _buildVideoLayout(BuildContext context, List<dynamic> videos) {
+    if (videos.isEmpty) {
+      return const Center(child: Text('Nada por aqui ainda.'));
+    }
+
+    final upNext = videos.first;
+    final rest = videos.length > 1 ? videos.sublist(1) : <dynamic>[];
+
+    return ListView(
+      padding: const EdgeInsets.only(top: 12, bottom: 24),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Text(
+            'Watch Now',
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
           ),
-          Expanded(
-            child: Container(
-              height: 44,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F1F3),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.search, size: 20, color: Colors.black54),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      textInputAction: TextInputAction.search,
-                      onChanged: _onQueryChanged,
-                      onSubmitted: _submitSearch,
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        isCollapsed: true,
-                        hintText: locals.search,
-                      ),
-                    ),
-                  ),
-                  if (_controller.text.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        _controller.clear();
-                        setState(() {
-                          _hasSearched = false;
-                        });
-                      },
-                      child: const Icon(Icons.close, size: 18, color: Colors.black45),
-                    ),
-                ],
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: _FeaturedVideoCard(
+            video: upNext,
+            onTap: () => _openVideo(context, upNext),
+          ),
+        ),
+        const SizedBox(height: 24),
+        _buildHistorySection(context),
+        if (rest.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'What to Watch',
+              style: GoogleFonts.inter(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 200,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: rest.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final video = rest[index];
+                return _VideoRowTile(
+                  video: video,
+                  onTap: () => _openVideo(context, video),
+                );
+              },
+            ),
+          ),
         ],
+      ],
+    );
+  }
+
+  /// Seção "History" conectada de verdade ao banco Drift local
+  /// (AppDatabase.getHistoryVideos), respeitando o perfil ativo.
+  Widget _buildHistorySection(BuildContext context) {
+    return FutureBuilder<List<LocalStoreVideo>>(
+      future: _historyFuture ??= AppDatabase.instance
+          .getHistoryVideos(context.read<SettingsBloc>().state.currentProfile),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return _buildHistoryLoading();
+        }
+        final items = snapshot.data ?? const <LocalStoreVideo>[];
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'History',
+                style: GoogleFonts.inter(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 200,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemCount: items.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final video = items[index];
+                  return _VideoRowTile(
+                    video: video,
+                    onTap: () => _openVideo(context, video),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHistoryLoading() {
+    return SizedBox(
+      height: 200,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: 4,
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemBuilder: (context, index) {
+          return SizedBox(
+            width: 220,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8E8E8),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  height: 10,
+                  width: 140,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8E8E8),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  // -------------------------------------------------------------------
-  // Sugestões (digitando) / Histórico (campo vazio)
-  // -------------------------------------------------------------------
-
-  Widget _buildSuggestionsOrHistory(
-      BuildContext context, SearchState state, S locals) {
-    final typing = _controller.text.trim().isNotEmpty;
-
-    if (typing) {
-      final suggestions = _currentSuggestions(state);
-      if (suggestions.isEmpty) {
-        return const SizedBox.shrink();
-      }
-      return ListView.builder(
-        itemCount: suggestions.length,
-        itemBuilder: (context, index) {
-          final suggestion = suggestions[index].toString();
-          return ListTile(
-            leading: const Icon(Icons.search, color: Colors.black45),
-            title: Text(suggestion),
-            trailing: const Icon(Icons.north_west, size: 18, color: Colors.black38),
-            onTap: () {
-              _controller.text = suggestion;
-              _submitSearch(suggestion);
-            },
-          );
-        },
-      );
-    }
-
-    // Histórico
-    final history = state.searchHistory;
-    if (history.isEmpty) {
-      return Center(
-        child: Text(
-          locals.noSearchHistory,
-          style: const TextStyle(color: Colors.black45),
-        ),
-      );
-    }
-    final settings = context.read<SettingsBloc>().state;
-    return ListView.builder(
-      itemCount: history.length,
-      itemBuilder: (context, index) {
-        final entry = history[index];
-        return ListTile(
-          leading: const Icon(Icons.history, color: Colors.black45),
-          title: Text(entry.query),
-          trailing: IconButton(
-            icon: const Icon(Icons.close, size: 18, color: Colors.black38),
-            onPressed: () {
-              context.read<SearchBloc>().add(SearchEvent.deleteSearchQuery(
-                    query: entry.query,
-                    profileName: settings.currentProfile,
-                  ));
-            },
-          ),
-          onTap: () {
-            _controller.text = entry.query;
-            _submitSearch(entry.query);
-          },
-        );
-      },
-    );
-  }
-
-  List<dynamic> _currentSuggestions(SearchState state) {
-    if (_serviceType == YouTubeServices.newpipe.name) {
-      return state.newPipeSuggestionResult;
-    } else if (_serviceType == YouTubeServices.invidious.name) {
-      return state.invidiousSuggestionResult;
-    }
-    return state.suggestions;
-  }
-
-  // -------------------------------------------------------------------
-  // Resultados
-  // -------------------------------------------------------------------
-
-  Widget _buildResults(BuildContext context, SearchState state, S locals) {
-    final loading = _isLoadingResults(state);
-    final items = _currentResultItems(state);
-
-    if (loading && items.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (items.isEmpty) {
-      return Center(
-        child: Text(
-          locals.noResultsFound,
-          style: const TextStyle(color: Colors.black45),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      controller: _scrollController,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: items.length + (loading ? 1 : 0),
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        if (index >= items.length) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-                child: SizedBox(
-                    width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))),
-          );
-        }
-        final item = items[index];
-        return _SearchResultTile(
-          item: item,
-          onTap: () => _openResult(context, item),
-        );
-      },
-    );
-  }
-
-  bool _isLoadingResults(SearchState state) {
-    if (_serviceType == YouTubeServices.newpipe.name) {
-      return state.fetchNewPipeSearchResultStatus == ApiStatus.loading;
-    } else if (_serviceType == YouTubeServices.invidious.name) {
-      return state.fetchInvidiousSearchResultStatus == ApiStatus.loading;
-    }
-    return state.fetchSearchResultStatus == ApiStatus.loading;
-  }
-
-  List<dynamic> _currentResultItems(SearchState state) {
-    if (_serviceType == YouTubeServices.newpipe.name) {
-      return state.newPipeSearchResult?.items ?? const [];
-    } else if (_serviceType == YouTubeServices.invidious.name) {
-      return state.invidiousSearchResult;
-    }
-    return state.result?.items ?? const [];
-  }
-
-  void _openResult(BuildContext context, dynamic item) {
-    final videoId = _extractVideoId(item);
-    final channelId = _extractChannelId(item);
+  void _openVideo(BuildContext context, dynamic video) {
+    final String? videoId = _extractVideoId(video);
+    final String? channelId = _extractChannelId(video);
     if (videoId == null || channelId == null || videoId.isEmpty) return;
 
-    context.read<WatchBloc>().add(
-          WatchEvent.setSelectedVideoBasicDetails(
-            details: VideoBasicInfo(
-              id: videoId,
-              title: _extractTitle(item),
-              thumbnailUrl: _extractThumbnail(item),
-              channelName: _safe(() => item.uploaderName as String?),
-              channelThumbnailUrl: _extractUploaderAvatar(item),
-              channelId: channelId,
-              uploaderVerified: _safe(() => item.uploaderVerified as bool?),
-            ),
-          ),
-        );
+    BlocProvider.of<WatchBloc>(context).add(
+      WatchEvent.setSelectedVideoBasicDetails(
+        details: VideoBasicInfo(
+          id: videoId,
+          title: _extractTitle(video),
+          thumbnailUrl: _extractThumbnail(video),
+          channelName: _safe(() => video.uploaderName as String?),
+          channelThumbnailUrl: _extractUploaderAvatar(video),
+          channelId: channelId,
+          uploaderVerified: _safe(() => video.uploaderVerified as bool?),
+        ),
+      ),
+    );
     context.goNamed('watch', pathParameters: {
       'videoId': videoId,
       'channelId': channelId,
@@ -381,76 +736,9 @@ class _ScreenSearchNowState extends State<ScreenSearchNow> {
   }
 }
 
-class _SearchResultTile extends StatelessWidget {
-  final dynamic item;
-  final VoidCallback onTap;
-
-  const _SearchResultTile({required this.item, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final locals = S.of(context);
-    final thumbnail = _extractThumbnail(item);
-    final title = _extractTitle(item) ?? locals.noVideoTitle;
-    final uploaderName =
-        _safe(() => item.uploaderName as String?) ?? locals.noUploaderName;
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                width: 140,
-                height: 79,
-                child: thumbnail != null
-                    ? ThumbnailImage(url: thumbnail)
-                    : Container(color: const Color(0xFFE8E8E8)),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    uploaderName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: kGreyColor),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------
-// Extratores seguros (mesmo padrão do screen_watch_now.dart): tentam os
-// nomes de campo de cada backend (Piped/.title, NewPipe/.name, etc.) sem
-// derrubar a tela se um deles não existir na classe.
-//
-// NOTA: cobre Piped e NewPipe Extractor, que já validamos. O model do
-// Invidious ainda não foi conferido — se título/thumbnail vierem em
-// branco só nesse serviço, manda o arquivo do InvidiousSearchResp que eu
-// completo o fallback.
-// ---------------------------------------------------------------------
-
+/// Tenta ler um campo dinâmico sem derrubar a tela se ele não existir
+/// nesse model específico (NewPipe/Piped/Invidious têm classes diferentes).
+/// Em caso de erro, retorna null em vez de propagar a exceção.
 T? _safe<T>(T? Function() getter) {
   try {
     return getter();
@@ -458,6 +746,13 @@ T? _safe<T>(T? Function() getter) {
     return null;
   }
 }
+
+// -------------------------------------------------------------------------
+// Extratores com fallback: cada backend usa nomes de campo diferentes pro
+// mesmo dado (ex: Piped usa `.title`/`.thumbnail`, NewPipe Extractor usa
+// `.name`/`.thumbnailUrl`). Tenta os dois, nessa ordem, sem crashar se um
+// deles não existir na classe.
+// -------------------------------------------------------------------------
 
 String? _extractTitle(dynamic v) =>
     _safe(() => v.title as String?) ?? _safe(() => v.name as String?);
@@ -470,6 +765,13 @@ String? _extractUploaderAvatar(dynamic v) =>
     _safe(() => v.uploaderAvatar as String?) ??
     _safe(() => v.uploaderAvatarUrl as String?);
 
+/// Views: Piped usa `.views` (int), NewPipe usa `.viewCount` (int).
+int? _extractViews(dynamic v) =>
+    _safe(() => v.views as int?) ?? _safe(() => v.viewCount as int?);
+
+/// videoId: NewPipeSearchItem já expõe um getter pronto `.videoId`;
+/// outros backends não têm esse getter, então cai no fallback manual
+/// (extrair da querystring `?v=` da própria `.url`).
 String? _extractVideoId(dynamic v) {
   final ready = _safe(() => v.videoId as String?);
   if (ready != null && ready.isNotEmpty) return ready;
@@ -479,9 +781,13 @@ String? _extractVideoId(dynamic v) {
   return uri?.queryParameters['v'] ?? uri?.pathSegments.lastOrNull;
 }
 
+/// channelId: mesma lógica — usa o getter pronto se existir, senão
+/// extrai manualmente da `.uploaderUrl`.
 String? _extractChannelId(dynamic v) {
   final ready = _safe(() => v.channelId as String?);
   if (ready != null && ready.isNotEmpty) return ready;
+  // LocalStoreVideo (histórico local) guarda o id do canal direto em
+  // `.uploaderId`, sem URL pra fazer parse.
   final uploaderId = _safe(() => v.uploaderId as String?);
   if (uploaderId != null && uploaderId.isNotEmpty) return uploaderId;
   final uploaderUrl = _safe(() => v.uploaderUrl as String?);
@@ -493,4 +799,192 @@ String? _extractChannelId(dynamic v) {
     if (idx + 1 < uri.pathSegments.length) return uri.pathSegments[idx + 1];
   }
   return uri.pathSegments.lastOrNull;
+}
+
+/// Card grande em destaque ("Up Next"), thumbnail cheia + gradiente escuro
+/// + título/canal sobrepostos, igual ao topo da tela Watch Now da Apple TV.
+class _FeaturedVideoCard extends StatelessWidget {
+  final dynamic video;
+  final VoidCallback onTap;
+
+  const _FeaturedVideoCard({required this.video, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final locals = S.of(context);
+    final rawDuration = _safe(() => video.duration);
+    final duration = _safe(() => formatDuration(rawDuration as int?)) ?? '';
+    final thumbnail = _extractThumbnail(video);
+    final title = _extractTitle(video) ?? locals.noVideoTitle;
+    final uploaderName =
+        _safe(() => video.uploaderName as String?) ?? locals.noUploaderName;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AspectRatio(
+        aspectRatio: 16 / 10,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (thumbnail != null)
+                ThumbnailImage(url: thumbnail)
+              else
+                Container(color: const Color(0xFFE8E8E8)),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.75),
+                      ],
+                      stops: const [0.45, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+              if (duration.isNotEmpty)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      duration,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 14,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      uploaderName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Card menor usado na fileira horizontal "What to Watch".
+class _VideoRowTile extends StatelessWidget {
+  final dynamic video;
+  final VoidCallback onTap;
+
+  const _VideoRowTile({required this.video, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final locals = S.of(context);
+    final rawDuration = _safe(() => video.duration);
+    final duration = _safe(() => formatDuration(rawDuration as int?)) ?? '';
+    final thumbnail = _extractThumbnail(video);
+    final title = _extractTitle(video) ?? locals.noVideoTitle;
+    final uploaderName =
+        _safe(() => video.uploaderName as String?) ?? locals.noUploaderName;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 220,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (thumbnail != null)
+                      ThumbnailImage(url: thumbnail)
+                    else
+                      Container(color: const Color(0xFFE8E8E8)),
+                    if (duration.isNotEmpty)
+                      Positioned(
+                        bottom: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: kBlackColor,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            duration,
+                            style: const TextStyle(
+                              color: kWhiteColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              uploaderName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11, color: kGreyColor!),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
