@@ -130,6 +130,7 @@ class _ScreenSearchNowState extends State<ScreenSearchNow> {
             query: _lastSubmittedQuery,
             serviceType: _serviceType,
             filter: 'all',
+            nextPage: null,
           ));
     } else {
       if (state.isMoreFetchCompleted ||
